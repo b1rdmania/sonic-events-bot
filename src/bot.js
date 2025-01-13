@@ -206,10 +206,13 @@ bot.command('help', (ctx) => {
 
 bot.on('text', async (ctx) => {
    try {
-       const query = ctx.message.text;
-       const events = await getEvents();
-       const response = await processQuery(query, events);
-       ctx.reply(response);
+       // Only respond to direct messages or if bot is mentioned in groups
+       if (ctx.message.chat.type === 'private' || ctx.message.text.includes('@soniceventsbot')) {
+           const query = ctx.message.text.replace('@soniceventsbot', '').trim();
+           const events = await getEvents();
+           const response = await processQuery(query, events);
+           ctx.reply(response);
+       }
    } catch (error) {
        console.error('Error:', error);
        ctx.reply('Sorry, something went wrong. Try asking another way?');
