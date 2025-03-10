@@ -19,6 +19,7 @@
   "homepage": "https://github.com/b1rdmania/coinwings#readme",
   "dependencies": {
     "dotenv": "^16.4.7",
+    "firebase": "^11.4.0",
     "openai": "^4.77.3",
     "telegraf": "^4.16.3"
   },

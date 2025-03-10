@@ -1,0 +1,166 @@
+{
+  "aircraft": {
+    "categories": {
+      "light": {
+        "name": "Light Jet",
+        "capacity": "4-6 passengers",
+        "range": "~1,500 miles",
+        "speed": "400-480 mph",
+        "examples": ["Citation CJ3", "Phenom 300", "Learjet 75"],
+        "best_for": "Short trips, small groups, efficiency",
+        "hourly_rate": "$4,000-5,500",
+        "description": "Light jets are perfect for shorter trips with smaller groups. They offer excellent efficiency and can access smaller airports that larger jets cannot."
+      },
+      "midsize": {
+        "name": "Mid-size Jet",
+        "capacity": "7-9 passengers",
+        "range": "~2,000 miles",
+        "speed": "430-500 mph",
+        "examples": ["Citation XLS", "Learjet 60", "Hawker 800XP"],
+        "best_for": "Domestic flights, medium groups, comfort",
+        "hourly_rate": "$5,500-7,000",
+        "description": "Mid-size jets offer a good balance of range, comfort, and cost. They typically feature stand-up cabins, enclosed lavatories, and good luggage capacity."
+      },
+      "heavy": {
+        "name": "Heavy Jet",
+        "capacity": "10-16 passengers",
+        "range": "4,000+ miles",
+        "speed": "480-550 mph",
+        "examples": ["Gulfstream G550", "Falcon 7X", "Legacy 600"],
+        "best_for": "International flights, large groups, luxury",
+        "hourly_rate": "$8,000-12,000",
+        "description": "Heavy jets are designed for long-range travel with larger groups. They offer spacious cabins, premium amenities, and can fly non-stop on intercontinental routes."
+      }
+    },
+    "specific_models": {
+      "citation_cj3": {
+        "name": "Citation CJ3",
+        "category": "light",
+        "capacity": "6 passengers",
+        "range": "1,875 miles",
+        "speed": "478 mph",
+        "features": ["Stand-up cabin", "Enclosed lavatory", "External baggage"],
+        "hourly_rate": "$4,500",
+        "description": "The Citation CJ3 is a popular light jet known for its efficiency and performance. It offers a comfortable cabin and good range for its class."
+      },
+      "gulfstream_g550": {
+        "name": "Gulfstream G550",
+        "category": "heavy",
+        "capacity": "14 passengers",
+        "range": "6,750 miles",
+        "speed": "585 mph",
+        "features": ["Stand-up cabin", "Full galley", "Multiple living areas", "Global range"],
+        "hourly_rate": "$10,000",
+        "description": "The Gulfstream G550 is a long-range business jet with exceptional performance. It can fly non-stop from New York to Tokyo and features a spacious, luxurious cabin."
+      },
+      "citation_xls": {
+        "name": "Citation XLS",
+        "category": "midsize",
+        "capacity": "9 passengers",
+        "range": "2,100 miles",
+        "speed": "507 mph",
+        "features": ["Stand-up cabin", "Enclosed lavatory", "External baggage"],
+        "hourly_rate": "$5,800",
+        "description": "The Citation XLS is one of the most popular midsize jets, known for its versatility and reliability. It offers a comfortable cabin and good short-field performance."
+      }
+    }
+  },
+  "routes": {
+    "popular_routes": {
+      "new_york_miami": {
+        "origin": "New York",
+        "destination": "Miami",
+        "distance": "1,090 miles",
+        "flight_time": {
+          "light_jet": "2.5 hours",
+          "midsize_jet": "2.3 hours",
+          "heavy_jet": "2.1 hours"
+        },
+        "pricing": {
+          "light_jet": "$18,000-22,000",
+          "midsize_jet": "$25,000-30,000",
+          "heavy_jet": "$35,000-45,000"
+        },
+        "crypto_pricing": {
+          "light_jet": "11-13 ETH",
+          "midsize_jet": "15-18 ETH",
+          "heavy_jet": "21-27 ETH"
+        },
+        "popular_airports": {
+          "origin": ["Teterboro (TEB)", "Westchester (HPN)"],
+          "destination": ["Miami Executive (TMB)", "Opa-Locka (OPF)"]
+        },
+        "notes": "Very popular route, especially during winter months and crypto conferences. Book at least 1 week in advance during peak season."
+      },
+      "london_dubai": {
+        "origin": "London",
+        "destination": "Dubai",
+        "distance": "3,400 miles",
+        "flight_time": {
+          "midsize_jet": "7 hours",
+          "heavy_jet": "6.5 hours"
+        },
+        "pricing": {
+          "midsize_jet": "$45,000-55,000",
+          "heavy_jet": "$65,000-80,000"
+        },
+        "crypto_pricing": {
+          "midsize_jet": "27-33 ETH",
+          "heavy_jet": "39-48 ETH"
+        },
+        "popular_airports": {
+          "origin": ["Farnborough (FAB)", "Luton (LTN)"],
+          "destination": ["Dubai International (DXB)", "Al Maktoum (DWC)"]
+        },
+        "notes": "Popular route for crypto traders and investors. Heavy jets recommended for comfort on this long-haul route."
+      },
+      "san_francisco_austin": {
+        "origin": "San Francisco",
+        "destination": "Austin",
+        "distance": "1,500 miles",
+        "flight_time": {
+          "light_jet": "3.5 hours",
+          "midsize_jet": "3.2 hours",
+          "heavy_jet": "3 hours"
+        },
+        "pricing": {
+          "light_jet": "$25,000-30,000",
+          "midsize_jet": "$32,000-38,000",
+          "heavy_jet": "$45,000-55,000"
+        },
+        "crypto_pricing": {
+          "light_jet": "15-18 ETH",
+          "midsize_jet": "19-23 ETH",
+          "heavy_jet": "27-33 ETH"
+        },
+        "popular_airports": {
+          "origin": ["San Francisco (SFO)", "Oakland (OAK)"],
+          "destination": ["Austin-Bergstrom (AUS)", "Austin Executive (EDC)"]
+        },
+        "notes": "Popular route for VC meetings and tech conferences. High demand during major tech events."
+      }
+    }
+  },
+  "faq": {
+    "booking_process": {
+      "how_to_book": "Booking with CoinWings is simple: 1) Tell us your route and requirements, 2) We provide aircraft options and pricing, 3) Connect with our aviation team for final details, 4) Book with crypto or fiat, 5) Take off!",
+      "advance_notice": "While we can accommodate last-minute bookings, we recommend booking at least 48 hours in advance for domestic flights and 72 hours for international flights to ensure the best aircraft options and pricing.",
+      "cancellation_policy": "Our standard cancellation policy allows for full refunds up to 48 hours before departure. Cancellations within 48 hours may incur charges depending on the specific circumstances."
+    },
+    "payment": {
+      "accepted_cryptocurrencies": "We accept Bitcoin (BTC), Ethereum (ETH), and USDC for all bookings. Other cryptocurrencies may be accepted upon request.",
+      "payment_process": "Once you confirm your booking, we'll provide wallet addresses for payment. After confirmation of the transaction, your flight is secured.",
+      "fiat_options": "We also accept traditional payment methods including wire transfers, credit cards, and bank transfers for clients who prefer not to use cryptocurrency."
+    },
+    "aircraft": {
+      "selection_criteria": "The best aircraft for your trip depends on several factors: number of passengers, distance, luggage requirements, and personal preferences. Our team can help you select the optimal aircraft for your specific needs.",
+      "amenities": "Depending on the aircraft, amenities may include Wi-Fi, entertainment systems, fully reclining seats, sleeping accommodations, gourmet catering, and private lavatories.",
+      "pets_policy": "Most private jets allow pets onboard. Please inform us in advance if you'll be traveling with pets so we can select a pet-friendly aircraft and prepare accordingly."
+    },
+    "safety": {
+      "standards": "Safety is our top priority. We only work with operators who maintain the highest safety standards, including regular maintenance checks, experienced flight crews, and comprehensive safety protocols.",
+      "covid_measures": "Enhanced cleaning procedures, HEPA filters, and flexible booking policies are standard across our fleet to ensure your health and safety during travel.",
+      "certifications": "All our partner operators are FAA Part 135 certified (or international equivalent) and many maintain additional safety certifications such as ARGUS Platinum or Wyvern Wingman."
+    }
+  }
+} 
