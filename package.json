@@ -1,7 +1,7 @@
 {
-  "name": "sonic-events-bot",
+  "name": "coinwings-bot",
   "version": "1.0.0",
-  "description": "Telegram bot for Sonic Events management",
+  "description": "Private aviation concierge bot for the crypto community",
   "main": "src/bot.js",
   "scripts": {
     "start": "node src/bot.js",
@@ -9,19 +9,17 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/b1rdmania/sonic-events-bot.git"
+    "url": "git+https://github.com/b1rdmania/coinwings.git"
   },
   "author": "b1rdmania",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/b1rdmania/sonic-events-bot/issues"
+    "url": "https://github.com/b1rdmania/coinwings/issues"
   },
-  "homepage": "https://github.com/b1rdmania/sonic-events-bot#readme",
+  "homepage": "https://github.com/b1rdmania/coinwings#readme",
   "dependencies": {
-    "airtable": "^0.12.2",
     "dotenv": "^16.4.7",
     "openai": "^4.77.3",
-    "punycode": "^2.3.1",
     "telegraf": "^4.16.3"
   },
   "devDependencies": {

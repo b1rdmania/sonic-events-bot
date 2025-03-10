@@ -1,8 +1,7 @@
 require('dotenv').config();
 const { Telegraf } = require('telegraf');
-const { getEvents } = require('./airtable');
-const OpenAI = require('openai');
 const config = require('./config/config');
+const OpenAI = require('openai');
 
 // Initialize OpenAI
 const openai = new OpenAI({
