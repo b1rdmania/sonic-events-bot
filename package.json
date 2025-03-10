@@ -5,7 +5,10 @@
   "main": "src/bot.js",
   "scripts": {
     "start": "node src/bot.js",
-    "dev": "nodemon src/bot.js"
+    "dev": "nodemon src/bot.js",
+    "simple": "node src/bot-simple.js",
+    "dev-simple": "nodemon src/bot-simple.js",
+    "import-data": "node src/scripts/import-data.js"
   },
   "repository": {
     "type": "git",
