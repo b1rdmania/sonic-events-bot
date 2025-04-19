@@ -161,7 +161,6 @@ Your task is to analyze user messages and determine the user's intent and extrac
 
     // 4. Generate content using genAI.models.generateContent directly
     console.log(`Using model ${modelId}. Calling genAI.models.generateContent...`);
-    // const result = await model.generateContent(fullPrompt); // Old call on separate model object
     const result = await genAI.models.generateContent({
         model: modelId,
         contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
@@ -169,12 +168,12 @@ Your task is to analyze user messages and determine the user's intent and extrac
         generationConfig: { responseMimeType: "application/json" },
     });
 
-    // 5. Process result (keep existing logic)
-    const response = result.response;
-    const candidates = response?.candidates;
+    // 5. Process result (keep existing logic, BUT use result directly)
+    const candidates = result?.candidates;
+
     if (!candidates || candidates.length === 0 || !candidates[0].content || !candidates[0].content.parts || candidates[0].content.parts.length === 0 || !candidates[0].content.parts[0].text) {
         console.error('No valid text part found in Gemini response candidates:', JSON.stringify(result, null, 2));
-        const promptFeedback = response?.promptFeedback;
+        const promptFeedback = result?.promptFeedback;
         if (promptFeedback?.blockReason) {
           console.error("Prompt blocked:", promptFeedback.blockReason);
            return {
@@ -302,29 +301,29 @@ Formatted Response:
 
     // 4. Generate content using genAI.models.generateContent directly
     console.log(`Using model ${modelId}. Calling genAI.models.generateContent for formatting...`);
-    // const result = await model.generateContent(prompt); // Old call on separate model object
     const result = await genAI.models.generateContent({
         model: modelId,
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         safetySettings: safetySettings,
     });
 
-    // 5. Process result (keep existing logic)
-    const response = result.response;
-    if (!response || !response.candidates || response.candidates.length === 0 || !response.candidates[0].content || !response.candidates[0].content.parts || response.candidates[0].content.parts.length === 0 || !response.candidates[0].content.parts[0].text) {
-        const promptFeedback = response?.promptFeedback;
+    // 5. Process result (keep existing logic, BUT use result directly)
+    const candidates = result?.candidates;
+
+    if (!candidates || candidates.length === 0 || !candidates[0].content || !candidates[0].content.parts || candidates[0].content.parts.length === 0 || !candidates[0].content.parts[0].text) {
+        const promptFeedback = result?.promptFeedback;
         if (promptFeedback?.blockReason) {
             console.error("Formatting prompt blocked:", promptFeedback.blockReason);
             return escapeMarkdownV2(`I couldn\'t format the response due to safety settings: ${promptFeedback.blockReason}`);
         }
-        if (response?.candidates?.[0]?.finishReason && response.candidates[0].finishReason !== 'STOP') {
-           console.error("Formatting candidate finished with reason:", response.candidates[0].finishReason);
-           return escapeMarkdownV2(`Sorry, I encountered an issue while formatting the data (${response.candidates[0].finishReason}).`);
+        if (candidates && candidates.length > 0 && candidates[0].finishReason && candidates[0].finishReason !== 'STOP') {
+           console.error("Formatting candidate finished with reason:", candidates[0].finishReason);
+           return escapeMarkdownV2(`Sorry, I encountered an issue while formatting the data (${candidates[0].finishReason}).`);
         }
-        console.error("Invalid response structure from Gemini formatting model:", JSON.stringify(response, null, 2));
+        console.error("Invalid response structure from Gemini formatting model:", JSON.stringify(result, null, 2));
         return escapeMarkdownV2("Sorry, I couldn\'t format the data properly.");
     }
-    const formattedText = response.candidates[0].content.parts[0].text;
+    const formattedText = candidates[0].content.parts[0].text;
     return formattedText;
 
   } catch (error) {
