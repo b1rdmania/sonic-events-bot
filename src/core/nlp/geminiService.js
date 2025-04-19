@@ -31,6 +31,14 @@ async function initializeGemini() {
 
     console.log('GoogleGenAI class successfully retrieved, type:', typeof GoogleGenAIClass);
 
+    if (!config.gemini.apiKey) { // Add check here before instantiation
+      throw new Error('Missing required environment variable: GEMINI_API_KEY cannot instantiate');
+    }
+
+    console.log('Instantiating GoogleGenAI using { apiKey: ... }');
+    // Store the actual instance in the resolved promise
+    // return new GoogleGenAIClass(config.gemini.apiKey); // Old direct key passing
+    return new GoogleGenAIClass({ apiKey: config.gemini.apiKey }); // Correct instantiation for v0.9.0
   } catch (error) {
       console.error('Failed to dynamically import or initialize @google/genai:', error);
       GoogleGenAIClass = null; // Ensure it's null on failure
