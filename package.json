@@ -1,13 +1,11 @@
 {
   "name": "sonic-events-bot",
   "version": "1.0.0",
-  "description": "Telegram bot for managing Luma events",
+  "description": "Telegram bot for Sonic Events management",
   "main": "src/bot.js",
   "scripts": {
     "start": "node src/bot.js",
-    "dev": "nodemon src/bot.js",
-    "build": "prisma generate",
-    "postinstall": "npm run build"
+    "dev": "nodemon src/bot.js"
   },
   "repository": {
     "type": "git",
@@ -20,16 +18,13 @@
   },
   "homepage": "https://github.com/b1rdmania/sonic-events-bot#readme",
   "dependencies": {
-    "@google/genai": "^0.19.0",
+    "@google/genai": "^1.0.0-beta.4",
     "@prisma/client": "^6.6.0",
     "airtable": "^0.12.2",
     "dotenv": "^16.4.7",
     "openai": "^4.77.3",
     "punycode": "^2.3.1",
-    "telegraf": "^4.16.3",
-    "axios": "^1.4.0",
-    "pg": "^8.9.0",
-    "winston": "^3.8.2"
+    "telegraf": "^4.16.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.9",
