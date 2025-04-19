@@ -60,8 +60,10 @@ const messageHandler = async (ctx) => {
       // Let's proceed, Gemini might still answer general questions.
     }
 
+    // Log the context object before passing it
+    console.log('Context being passed to processNaturalLanguageQuery:', JSON.stringify({ events: eventContext }, null, 2));
+
     // 2. Call Gemini Service for Natural Language Response
-    // This function now returns a string response or an error message string
     const responseText = await processNaturalLanguageQuery(userText, { events: eventContext });
 
     console.log("Raw Response from NLP Service:", responseText);
