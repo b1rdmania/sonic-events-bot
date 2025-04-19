@@ -42,79 +42,35 @@ async function processNaturalLanguageQuery(text, context = {}) {
   console.log(`Processing NLP query: "${text}" with context:`, context);
 
   // Extract relevant context (e.g., list of event names/IDs)
-  const eventListContext = context.events?.map(e => `- ${e.name} (ID: ${e.api_id})`).join('\n') || 'No events available in context.';
+  const eventListContext = context.events?.map(e => `- ${escapeMarkdownV2(e.name || 'Unknown Name')} (ID: ${escapeMarkdownV2(e.api_id || 'N/A')})`).join('\n') || 'No events available in context.';
 
+  // Simplified Prompt
   const prompt = `
-You are an assistant helping manage Luma events via a Telegram bot.
-Analyze the user's request: "${text}"
+You are an assistant managing Luma events via Telegram.
+User request: "${text}"
 
 Context:
 Available Events:
 ${eventListContext}
 
-Identify the user's primary intent and extract relevant entities.
-Possible Intents: LIST_EVENTS, GET_GUESTS, GET_GUEST_COUNT, APPROVE_GUEST, REJECT_GUEST, UNKNOWN.
-Possible Entities: event_id, event_name, guest_email, status_filter (e.g., 'approved', 'pending_approval'), location, date_range.
-
-If the user mentions an event name but it's ambiguous or doesn't match the context, set intent to UNKNOWN and include an 'ambiguous_event_name' entity.
-If the request is unclear or lacks necessary information (e.g., approving without an email or event), set intent to UNKNOWN.
+Analyze the user request.
+Identify the primary intent from: LIST_EVENTS, GET_GUESTS, GET_GUEST_COUNT, APPROVE_GUEST, REJECT_GUEST, UNKNOWN.
+Extract relevant entities like: event_id, event_name, guest_email, status_filter (e.g., 'approved', 'pending_approval').
 
 Respond ONLY with a valid JSON object containing:
 - "intent": (string) The identified intent.
 - "entities": (object) Key-value pairs of extracted entities.
-- "confidence": (number) A confidence score from 0.0 to 1.0 for the intent and entities (estimate).
-- "requires_clarification": (boolean) True if the bot should ask a follow-up question.
-- "clarification_message": (string, optional) A suggested message if clarification is needed.
+- "confidence": (number) Confidence score [0.0-1.0].
+- "requires_clarification": (boolean) True if more info needed.
+- "clarification_message": (string, optional) Suggested follow-up message.
 
-Example 1:
-User: "Who is coming to the Summer Mixer?"
-Response:
-{
-  "intent": "GET_GUESTS",
-  "entities": { "event_name": "Summer Mixer" },
-  "confidence": 0.9,
-  "requires_clarification": false,
-  "clarification_message": null
-}
-
-Example 2:
-User: "How many approved for the Dubai event?"
-Response:
-{
-  "intent": "GET_GUEST_COUNT",
-  "entities": { "location": "Dubai", "status_filter": "approved" },
-  "confidence": 0.8,
-  "requires_clarification": true,
-  "clarification_message": "Which Dubai event are you referring to? \nAvailable Dubai Events:\n- Dubai Tech Meetup (ID: evt_123)\n- Dubai Founders Brunch (ID: evt_456)"
-}
-
-Example 3:
-User: "Approve hello@example.com for evt_abc123"
-Response:
-{
-  "intent": "APPROVE_GUEST",
-  "entities": { "guest_email": "hello@example.com", "event_id": "evt_abc123" },
-  "confidence": 0.95,
-  "requires_clarification": false,
-  "clarification_message": null
-}
-
-Example 4:
-User: "What's happening?"
-Response:
-{
-  "intent": "UNKNOWN",
-  "entities": {},
-  "confidence": 0.5,
-  "requires_clarification": true,
-  "clarification_message": "I can help with Luma events. What would you like to know?"
-}
-
-Now analyze the user request: "${text}"
 JSON Response:
 `;
 
   try {
+    // Add a small delay to help mitigate rapid-fire requests hitting free tier limit
+    await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
+
     const result = await model.generateContent(prompt);
     const response = result.response;
     const responseText = response.text();
