@@ -12,6 +12,8 @@ const { escapeMarkdownV2 } = require('./escapeUtil'); // Import from new util fi
  */
 async function getEventGuests(encryptedApiKey, eventApiId, options = {}) {
   const result = await lumaClient.getGuests(encryptedApiKey, eventApiId, options);
+  console.log(`Luma API Result (getGuests for ${eventApiId}):`, JSON.stringify(result, null, 2)); // Log Luma Result
+
   const statusFilter = options.approval_status;
   const escapedEventId = escapeMarkdownV2(eventApiId);
   const escapedStatusFilter = escapeMarkdownV2(statusFilter);
@@ -50,6 +52,8 @@ async function getEventGuests(encryptedApiKey, eventApiId, options = {}) {
  */
 async function getEventGuestCount(encryptedApiKey, eventApiId, options = {}) {
   const result = await lumaClient.getGuests(encryptedApiKey, eventApiId, options);
+  console.log(`Luma API Result (getGuests for count for ${eventApiId}):`, JSON.stringify(result, null, 2)); // Log Luma Result
+
   const escapedEventId = escapeMarkdownV2(eventApiId);
 
   if (!result || !result.entries) {

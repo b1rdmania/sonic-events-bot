@@ -10,6 +10,7 @@ const { escapeMarkdownV2 } = require('./escapeUtil');
  */
 async function listOrgEvents(encryptedApiKey, options = {}) {
   const result = await lumaClient.listEvents(encryptedApiKey, options);
+  console.log(`Luma API Result (listEvents):`, JSON.stringify(result, null, 2)); // Log Luma Result
 
   if (!result || !result.entries || result.entries.length === 0) {
     return 'No upcoming events found for the linked Luma account\.'; // Escaped period
@@ -22,12 +23,13 @@ async function listOrgEvents(encryptedApiKey, options = {}) {
     const eventId = escapeMarkdownV2(event.api_id);
     const escapedStartTime = escapeMarkdownV2(startTime);
 
-    reply += `${index + 1}\. *${eventName}* \(ID: \`${eventId}\`\)\n`;
+    reply += `${index + 1}\\. *${eventName}* \(ID: \`${eventId}\`\)\n`;
     reply += `   Starts: ${escapedStartTime}\n`;
   });
 
   if (result.has_more) {
-    reply += `\n_\(More events available \- pagination not yet implemented\)_`;
+    const noteContent = "More events available - pagination not yet implemented";
+    reply += `\n_${escapeMarkdownV2(noteContent)}_`;
   }
 
   return reply;
