@@ -2,58 +2,40 @@
 const config = require('../../config');
 const { escapeMarkdownV2 } = require('../services/escapeUtil');
 
-// Global variable to hold the initialized client promise
-let genAIInstancePromise = null;
+// Store the retrieved class globally within the module scope
+let GoogleGenAIClass = null; // Use the correct name revealed by logs
 
 // Async function to initialize the GenAI client if not already done
-async function initializeGenAI() {
-  if (!genAIInstancePromise) {
-    console.log('Dynamically importing @google/genai...');
-    genAIInstancePromise = import('@google/genai').then(genaiModule => {
-        console.log('Dynamically imported genaiModule structure:', genaiModule);
-        console.log('Dynamically imported genaiModule.default structure:', genaiModule.default);
-        console.log('Keys in genaiModule.default:', genaiModule.default ? Object.keys(genaiModule.default) : 'default is undefined');
-
-        // ---> ATTEMPT TO FIND CONSTRUCTOR VIA KEY ITERATION <---
-        let GenAIConstructor = null;
-        if (genaiModule.default && typeof genaiModule.default === 'object') {
-            for (const key in genaiModule.default) {
-                if (key === 'GoogleGenerativeAI') {
-                    GenAIConstructor = genaiModule.default[key];
-                    console.log(`Found key '${key}', assigned to GenAIConstructor.`);
-                    break; // Found it, stop looping
-                }
-            }
-        } else {
-            console.log('genaiModule.default is not an object, cannot iterate keys.');
-        }
-        // ---> END KEY ITERATION <---
-
-        // const GenAIConstructor = genaiModule.default?.GoogleGenerativeAI; // Old direct access
-        console.log('Dynamic import successful. Type of GenAIConstructor (found via iteration):', typeof GenAIConstructor);
-
-        if (!GenAIConstructor) {
-            console.error('GoogleGenerativeAI constructor not found in genaiModule.default after key iteration:', genaiModule.default);
-            throw new Error('GoogleGenerativeAI constructor not found in dynamically imported module\'s default export (iteration check).');
-        }
-        if (typeof GenAIConstructor !== 'function') {
-           console.error('GoogleGenerativeAI (found via iteration) is not a function/constructor. Type:', typeof GenAIConstructor);
-           throw new Error('GoogleGenerativeAI (found via iteration) is not a function/constructor.');
-        }
-
-        if (!config.gemini.apiKey) {
-          throw new Error('Missing required environment variable: GEMINI_API_KEY during dynamic init');
-        }
-
-        console.log('Instantiating GoogleGenerativeAI dynamically from iterated key...');
-        return new GenAIConstructor(config.gemini.apiKey);
-    }).catch(err => {
-        console.error("Failed to dynamically import or initialize @google/genai:", err);
-        genAIInstancePromise = null; // Reset promise on failure
-        throw err; // Rethrow to calling function
-    });
+async function initializeGemini() {
+  // Only initialize once
+  if (GoogleGenAIClass) {
+    // console.log('Gemini already initialized.'); // Optional: uncomment for debug
+    return;
   }
-  return genAIInstancePromise;
+
+  try {
+    console.log('Attempting dynamic import of @google/genai...');
+    const genaiModule = await import('@google/genai');
+    // console.log('Dynamically imported module keys:', Object.keys(genaiModule)); // Optional debug log
+
+    // --- THE FIX: Use the correct class name --- 
+    // Access the actual exported class name revealed by logs
+    GoogleGenAIClass = genaiModule.GoogleGenAI; 
+
+    // Check if the correct class was found and is a function
+    if (!GoogleGenAIClass || typeof GoogleGenAIClass !== 'function') {
+         console.error('GoogleGenAI class not found or not a function in the imported module.', genaiModule);
+         // Throw specific error if the correct name wasn't found
+         throw new Error(`GoogleGenAI class not found or invalid type (${typeof GoogleGenAIClass}) in dynamically imported module.`);
+    }
+
+    console.log('GoogleGenAI class successfully retrieved, type:', typeof GoogleGenAIClass);
+
+  } catch (error) {
+      console.error('Failed to dynamically import or initialize @google/genai:', error);
+      GoogleGenAIClass = null; // Ensure it's null on failure
+      throw error; // Propagate the error
+  }
 }
 
 // Define safety settings (can remain global)
@@ -71,7 +53,6 @@ const possibleIntents = [
 ];
 
 // Define example JSON outputs (can remain global)
-// ... (keep existing exampleOutput strings) ...
 const exampleOutput1 = JSON.stringify({ intent: "GET_GUESTS", entities: { event_id: "[RESOLVED_ID_OF_NEXT_EVENT_FROM_CONTEXT]", status_filter: "approved" }, requires_clarification: false });
 const exampleOutput2 = JSON.stringify({ intent: "GET_EVENT_DETAILS", entities: { event_id: "evt-abc" }, requires_clarification: false });
 const exampleOutput3 = JSON.stringify({ intent: "GET_GUESTS", entities: { event_id: "evt-pL3FEVQfjNqlBBJ", status_filter: "pending_approval" }, requires_clarification: false });
@@ -86,11 +67,16 @@ const exampleOutput5 = JSON.stringify({ intent: "REQUIRES_CLARIFICATION", entiti
  */
 async function processNaturalLanguageQuery(text, context = {}) {
   try {
-    // Ensure GenAI is initialized (fetches or waits for the promise)
-    const genAI = await initializeGenAI();
+    // Ensure Gemini is initialized (this will run the import on the first call)
+    await initializeGemini();
 
-    // Dynamically import HarmCategory/HarmBlockThreshold here if needed for safetySettings
-    // Or initialize safetySettings after the first successful import
+    // Strict check if initialization failed
+    if (!GoogleGenAIClass) {
+         console.error("Cannot process NLP query because GoogleGenAIClass is not initialized.");
+         throw new Error('Gemini AI class is not available due to initialization failure.');
+    }
+
+    // Dynamically import HarmCategory/HarmBlockThreshold if needed for safetySettings
     if (!safetySettings) {
         const { HarmCategory, HarmBlockThreshold } = await import('@google/genai');
         safetySettings = [
@@ -101,12 +87,19 @@ async function processNaturalLanguageQuery(text, context = {}) {
         ];
     }
 
-    // Define the model *inside* the function using the initialized genAI
+    // Instantiate using the correct retrieved class
+    console.log('Attempting to instantiate GoogleGenAI...');
+    const genAI = new GoogleGenAIClass(config.gemini.apiKey); // Use the correct class variable
+    console.log('GoogleGenAI instantiation successful.');
+
+    // --- Now use the genAI instance ---
+    const modelId = config.gemini.modelId || "gemini-2.0-flash"; // Fallback model
     const model = genAI.getGenerativeModel({
-        model: "gemini-2.0-flash",
+        model: modelId,
         safetySettings: safetySettings,
         generationConfig: { responseMimeType: "application/json" }
     });
+    console.log(`Using model: ${modelId}. Generating content...`);
 
     const availableEvents = context.events || [];
     const eventContextString = availableEvents.length > 0
@@ -166,82 +159,75 @@ Return ONLY a JSON object with the following structure:
     const fullPrompt = `${prompt}\n"${text}"`;
 
     // Call generateContent directly on the model instance
-    console.log("Calling model.generateContent...");
+    // console.log("Calling model.generateContent..."); // Can comment out if too verbose
     const result = await model.generateContent(fullPrompt);
-    console.log("Raw Gemini API Result:", JSON.stringify(result, null, 2));
+    // console.log("Raw Gemini API Result:", JSON.stringify(result, null, 2)); // Can comment out
 
-    // ... (rest of the result processing logic remains the same)
+    // Process the result
     const response = result.response;
     const candidates = response?.candidates;
 
     if (!candidates || candidates.length === 0 || !candidates[0].content || !candidates[0].content.parts || candidates[0].content.parts.length === 0 || !candidates[0].content.parts[0].text) {
         console.error('No valid text part found in Gemini response candidates:', JSON.stringify(result, null, 2));
-        // Check for block reason (assuming it might be on result or result.promptFeedback?)
-        // Let's check the raw result structure log if this part fails
-        const promptFeedback = response?.promptFeedback; // Check if promptFeedback exists on result
+        const promptFeedback = response?.promptFeedback;
         if (promptFeedback?.blockReason) {
-            console.error("Prompt blocked:", promptFeedback.blockReason);
-             return {
-                intent: 'BLOCKED',
-                entities: {},
-                originalText: text,
-                error: `Request blocked due to safety settings: ${promptFeedback.blockReason}`
+          console.error("Prompt blocked:", promptFeedback.blockReason);
+           return {
+              intent: 'BLOCKED',
+              entities: {},
+              originalText: text,
+              error: `Request blocked due to safety settings: ${promptFeedback.blockReason}`
+          };
+        }
+        if (candidates && candidates.length > 0 && candidates[0].finishReason && candidates[0].finishReason !== 'STOP') {
+          console.error("Candidate finished with reason:", candidates[0].finishReason);
+           return {
+              intent: 'UNKNOWN',
+              entities: {},
+              originalText: text,
+              error: `AI response generation stopped unexpectedly (${candidates[0].finishReason}).`,
+              rawResponse: JSON.stringify(result, null, 2)
             };
         }
-        // Check for finish reason in candidate
-        if (candidates && candidates.length > 0 && candidates[0].finishReason && candidates[0].finishReason !== 'STOP') {
-            console.error("Candidate finished with reason:", candidates[0].finishReason);
-             return {
-                intent: 'UNKNOWN',
-                entities: {},
-                originalText: text,
-                error: `AI response generation stopped unexpectedly (${candidates[0].finishReason}).`,
-                rawResponse: JSON.stringify(result, null, 2)
-              };
-        }
-        // Generic error if no specific reason found
         return {
           intent: 'UNKNOWN',
           entities: {},
           originalText: text,
           error: 'Received an empty or invalid response structure from AI model.',
-          rawResponse: JSON.stringify(result, null, 2) // Log the full result structure
+          rawResponse: JSON.stringify(result, null, 2)
         };
-    }
-    const responseText = candidates[0].content.parts[0].text;
-
-    console.log("Raw Gemini Response Text (pre-cleaning):", responseText);
-
-    // Attempt to parse the JSON response (using existing robust logic)
-    let parsedResponse;
-    let cleanedText = responseText.trim();
-
-    // Check if response looks like markdown ```json ... ``` block
-    if (cleanedText.startsWith('```json') && cleanedText.endsWith('```')) {
-        cleanedText = cleanedText.substring(7, cleanedText.length - 3).trim();
-    }
-
-    try {
-      parsedResponse = JSON.parse(cleanedText);
-    } catch (parseError) {
-        console.error("Failed to parse Gemini JSON response:", parseError);
-        console.error("Raw text that failed parsing (after cleaning):", cleanedText);
-         return {
-            intent: 'UNKNOWN',
-            entities: {},
-            originalText: text,
-            error: 'Failed to parse response from AI model.',
-            rawResponse: responseText // Log original text before cleaning
-        };
-    }
-
-    console.log("Parsed Gemini Response:", parsedResponse);
-    parsedResponse.originalText = text;
-    return parsedResponse;
+      }
+      const responseText = candidates[0].content.parts[0].text;
+  
+      // console.log("Raw Gemini Response Text (pre-cleaning):", responseText); // Can comment out
+  
+      // Attempt to parse the JSON response
+      let parsedResponse;
+      let cleanedText = responseText.trim();
+      if (cleanedText.startsWith('```json') && cleanedText.endsWith('```')) {
+          cleanedText = cleanedText.substring(7, cleanedText.length - 3).trim();
+      }
+      try {
+        parsedResponse = JSON.parse(cleanedText);
+      } catch (parseError) {
+          console.error("Failed to parse Gemini JSON response:", parseError);
+          console.error("Raw text that failed parsing (after cleaning):", cleanedText);
+           return {
+              intent: 'UNKNOWN',
+              entities: {},
+              originalText: text,
+              error: 'Failed to parse response from AI model.',
+              rawResponse: responseText
+          };
+      }
+  
+      console.log("Parsed Gemini Response:", parsedResponse);
+      parsedResponse.originalText = text;
+      return parsedResponse;
 
   } catch (error) {
-    console.error("Error in processNaturalLanguageQuery:", error);
-    // Attempt to access potential safety feedback (structure might differ in new SDK)
+    console.error('Error during Gemini processing in processNaturalLanguageQuery:', error);
+    // Handle potential API errors or other issues
     if (error.response && error.response.promptFeedback?.blockReason) {
         console.error("Gemini API request blocked:", error.response.promptFeedback.blockReason);
         return {
@@ -251,11 +237,8 @@ Return ONLY a JSON object with the following structure:
             error: `Request blocked due to safety settings: ${error.response.promptFeedback.blockReason}`
         };
     }
-    // Check if the error is a GoogleGenerativeAIFetchError and extract status/message
-    // The specific error type name might vary based on the SDK version
-    // Example check (adjust based on actual error object structure):
     if (error.name === 'GoogleGenerativeAIFetchError' || error.message?.includes('FetchError')) {
-        const status = error.status || error.cause?.status; // Attempt to find status code
+        const status = error.status || error.cause?.status;
         const message = error.message;
         console.error(`Gemini API Fetch Error: Status ${status}, Message: ${message}`);
         return {
@@ -265,12 +248,11 @@ Return ONLY a JSON object with the following structure:
             error: `Failed to get response from AI model (API Error: ${status || 'Unknown Status'})`
         };
     }
-    // Generic fallback
     return {
       intent: 'UNKNOWN',
       entities: {},
       originalText: text,
-      error: 'Failed to get response from AI model.' // Keep generic error for now
+      error: `Failed to get response from AI model: ${error.message}` // Include error message
     };
   }
 }
@@ -284,8 +266,13 @@ Return ONLY a JSON object with the following structure:
  */
 async function formatDataWithGemini(data, userQueryContext = "the user's request") {
   try {
-    // Ensure GenAI is initialized
-    const genAI = await initializeGenAI();
+    // Ensure Gemini is initialized
+    await initializeGemini();
+
+    if (!GoogleGenAIClass) {
+      console.error("Cannot format data because GoogleGenAIClass is not initialized.");
+      throw new Error('Gemini AI class is not available due to initialization failure.');
+    }
 
     // Initialize safety settings if not already done
     if (!safetySettings) {
@@ -298,12 +285,16 @@ async function formatDataWithGemini(data, userQueryContext = "the user's request
         ];
     }
 
-    // Define the model *inside* the function
+    console.log('Attempting to instantiate GoogleGenAI for formatting...');
+    const genAI = new GoogleGenAIClass(config.gemini.apiKey);
+    console.log('GoogleGenAI instantiation successful for formatting.');
+
+    const modelId = config.gemini.modelId || "gemini-2.0-flash"; // Fallback model
     const model = genAI.getGenerativeModel({
-        model: "gemini-2.0-flash",
+        model: modelId,
         safetySettings: safetySettings
-        // No generationConfig needed for text response
     });
+    console.log(`Using model: ${modelId} for formatting. Generating content...`);
 
     const prompt = `
 You are an AI assistant helping format API data into a user-friendly, concise, and readable response for Telegram.
@@ -328,8 +319,6 @@ ${JSON.stringify(data, null, 2)}
 Formatted Response:
 `;
 
-    // Call generateContent
-    console.log("Calling model.generateContent for formatting...");
     const result = await model.generateContent(prompt);
     const response = result.response;
 
@@ -337,28 +326,27 @@ Formatted Response:
         const promptFeedback = response?.promptFeedback;
         if (promptFeedback?.blockReason) {
             console.error("Formatting prompt blocked:", promptFeedback.blockReason);
-            return escapeMarkdownV2(`I couldn't format the response due to safety settings: ${promptFeedback.blockReason}`);
+            return escapeMarkdownV2(`I couldn\'t format the response due to safety settings: ${promptFeedback.blockReason}`);
         }
         if (response?.candidates?.[0]?.finishReason && response.candidates[0].finishReason !== 'STOP') {
            console.error("Formatting candidate finished with reason:", response.candidates[0].finishReason);
            return escapeMarkdownV2(`Sorry, I encountered an issue while formatting the data (${response.candidates[0].finishReason}).`);
         }
         console.error("Invalid response structure from Gemini formatting model:", JSON.stringify(response, null, 2));
-        return escapeMarkdownV2("Sorry, I couldn't format the data properly.");
+        return escapeMarkdownV2("Sorry, I couldn\'t format the data properly.");
     }
 
     const formattedText = response.candidates[0].content.parts[0].text;
-    console.log("Formatted Gemini Response:", formattedText);
+    // console.log("Formatted Gemini Response:", formattedText); // Can comment out
     return formattedText;
 
   } catch (error) {
-    console.error("Error in formatDataWithGemini:", error);
-    // Attempt to access potential safety feedback (structure might differ in new SDK)
+    console.error('Error during Gemini processing in formatDataWithGemini:', error);
     if (error.response && error.response.promptFeedback?.blockReason) {
         console.error("Formatting request blocked:", error.response.promptFeedback.blockReason);
         return escapeMarkdownV2(`Failed to format response due to safety settings: ${error.response.promptFeedback.blockReason}`);
     }
-    return escapeMarkdownV2(`Sorry, an error occurred while trying to format the response. Raw data: ${JSON.stringify(data)}`);
+    return escapeMarkdownV2(`Sorry, an error occurred while trying to format the response: ${error.message}. Raw data: ${JSON.stringify(data)}`);
   }
 }
 
