@@ -2,56 +2,56 @@
 const config = require('../../config');
 const { escapeMarkdownV2 } = require('../services/escapeUtil');
 
-// Store the retrieved class globally within the module scope
-let GoogleGenAIClass = null; // Use the correct name revealed by logs
+// --- Singleton Pattern for Gemini Instance ---
+let GoogleGenAIClass = null; // Keep class reference if needed elsewhere, though maybe not
+let genAIInstance = null;
 
-// Async function to initialize the GenAI client if not already done
-async function initializeGemini() {
-  // Only initialize once
-  if (GoogleGenAIClass) {
-    // console.log('Gemini already initialized.'); // Optional: uncomment for debug
-    return;
+async function getGeminiInstance() {
+  // Return cached instance if available
+  if (genAIInstance) {
+    // console.log('Returning cached genAI instance');
+    return genAIInstance;
   }
 
-  try {
-    console.log('Attempting dynamic import of @google/genai...');
-    const genaiModule = await import('@google/genai');
-    // console.log('Dynamically imported module keys:', Object.keys(genaiModule)); // Optional debug log
-
-    // --- THE FIX: Use the correct class name --- 
-    // Access the actual exported class name revealed by logs
-    GoogleGenAIClass = genaiModule.GoogleGenAI; 
-
-    // Check if the correct class was found and is a function
-    if (!GoogleGenAIClass || typeof GoogleGenAIClass !== 'function') {
-         console.error('GoogleGenAI class not found or not a function in the imported module.', genaiModule);
-         // Throw specific error if the correct name wasn't found
-         throw new Error(`GoogleGenAI class not found or invalid type (${typeof GoogleGenAIClass}) in dynamically imported module.`);
+  // Load the class if not already loaded
+  if (!GoogleGenAIClass) {
+    try {
+      console.log('Attempting dynamic import of @google/genai for class...');
+      const mod = await import('@google/genai');
+      // Use the correct class name identified from logs
+      GoogleGenAIClass = mod.GoogleGenAI;
+      if (!GoogleGenAIClass || typeof GoogleGenAIClass !== 'function') {
+           console.error('GoogleGenAI class not found or not a function after import.', mod);
+           throw new Error(`GoogleGenAI class not found or invalid type (${typeof GoogleGenAIClass}) in dynamically imported module.`);
+      }
+      console.log('GoogleGenAI class successfully loaded.');
+    } catch (error) {
+      console.error('Failed to dynamically import @google/genai:', error);
+      GoogleGenAIClass = null; // Reset on failure
+      throw error; // Propagate the error
     }
+  }
 
-    console.log('GoogleGenAI class successfully retrieved, type:', typeof GoogleGenAIClass);
-
+  // Instantiate and cache the instance
+  try {
     if (!config.gemini.apiKey) {
       throw new Error('Missing required environment variable: GEMINI_API_KEY cannot instantiate');
     }
-
-    console.log('Instantiating GoogleGenAI using { apiKey: ... }');
-    // Explicitly set the base API endpoint
-    const apiEndpoint = 'generativelanguage.googleapis.com'; 
-    console.log(`Attempting instantiation with explicit apiEndpoint: ${apiEndpoint}`);
-    // return new GoogleGenAIClass({ apiKey: config.gemini.apiKey }); // Old instantiation
-    return new GoogleGenAIClass({ 
+    console.log('Instantiating and caching GoogleGenAI instance using { apiKey: ... }');
+    genAIInstance = new GoogleGenAIClass({ 
         apiKey: config.gemini.apiKey,
-        apiEndpoint: apiEndpoint 
+        // apiEndpoint: 'generativelanguage.googleapis.com' // Keep endpoint if needed, but often optional
     });
+    return genAIInstance;
   } catch (error) {
-      console.error('Failed to dynamically import or initialize @google/genai:', error);
-      GoogleGenAIClass = null; // Ensure it's null on failure
+      console.error('Failed to instantiate GoogleGenAI:', error);
+      genAIInstance = null; // Reset on failure
       throw error; // Propagate the error
   }
 }
+// --- End Singleton Pattern ---
 
-// Define safety settings (can remain global)
+// Define safety settings (can remain global, initialized lazily)
 let safetySettings = null;
 // Define possible intents (can remain global)
 const possibleIntents = [
@@ -79,19 +79,16 @@ const exampleOutput5 = JSON.stringify({ intent: "REQUIRES_CLARIFICATION", entiti
  * @returns {Promise<object>} - A promise resolving to an object with intent, entities, or error/clarification.
  */
 async function processNaturalLanguageQuery(text, context = {}) {
-  let genAI; // Define in function scope
-
   try {
-    // 1. Initialize
-    await initializeGemini();
-    if (!GoogleGenAIClass) {
-         console.error("Initialization check failed.");
-         throw new Error('Gemini AI class initialization failed.');
+    // 1. Get the singleton Gemini instance
+    const genAI = await getGeminiInstance();
+    if (!genAI) { // Should not happen if getGeminiInstance throws on failure, but good practice
+      throw new Error('Failed to retrieve Gemini AI instance.');
     }
-    console.log("Initialization check passed.");
 
-    // Initialize safety settings lazily (moved after init check)
+    // Initialize safety settings lazily
     if (!safetySettings) {
+        // Import HarmCategory/HarmBlockThreshold only once if needed
         const { HarmCategory, HarmBlockThreshold } = await import('@google/genai');
         safetySettings = [
             { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
@@ -101,64 +98,21 @@ async function processNaturalLanguageQuery(text, context = {}) {
         ];
     }
 
-    // 2. Instantiate
-    console.log('Instantiating GoogleGenAI...');
-    genAI = new GoogleGenAIClass({ apiKey: config.gemini.apiKey }); // Assign to local variable
-    console.log('GoogleGenAI instantiation successful.');
-
-    // 3. Verify genAI exists *immediately* after instantiation
-    if (!genAI) {
-         console.error("CRITICAL: genAI is undefined immediately after instantiation!");
-         throw new Error('genAI instance is undefined right after creation.');
-    }
-    console.log("Instantiation verified (genAI exists).");
-
-    // 4. Verify genAI.models exists
-    if (!genAI.models || typeof genAI.models !== 'object') {
-         console.error("CRITICAL: genAI.models is missing or not an object!", genAI.models);
-         console.log("Logging genAI object right before models error:", genAI); // Log genAI if models is missing
-         throw new Error('genAI.models is missing or not an object.');
-    }
-    console.log("genAI.models verified (it is an object). Type:", typeof genAI.models);
-
-    // 5. Inspect the 'models' object itself
-    console.log('--- Inspecting genAI.models object ---');
-    try {
-         console.log('Keys of genAI.models instance:', Object.keys(genAI.models));
-         console.log('Keys of genAI.models prototype:', Object.getPrototypeOf(genAI.models) ? Object.keys(Object.getPrototypeOf(genAI.models)) : 'Prototype not found');
-         console.log('Type of genAI.models.getGenerativeModel:', typeof genAI.models.getGenerativeModel);
-    } catch (inspectError) {
-        console.error("Error inspecting genAI.models:", inspectError)
-    }
-    console.log('--- End Inspecting genAI.models object ---');
-
-    // 6. Attempt to get the model (THIS IS THE TARGET LINE)
+    // 2. Get the specific model using the instance
     const modelId = config.gemini.modelId || "gemini-2.0-flash";
-    console.log(`Using model ID: ${modelId}. Getting model via genAI.models.getGenerativeModel...`);
-
-    // **** ADD FINAL CHECK ****
-    if (!genAI) throw new Error("genAI became undefined before getting model!");
-    if (!genAI.models) throw new Error("genAI.models became undefined before getting model!");
-    // **** END FINAL CHECK ****
-
-    const model = genAI.models.getGenerativeModel({ // This is the line we are testing
+    // console.log(`Using model: ${modelId}. Getting model via genAI.models.getGenerativeModel...`);
+    const model = genAI.models.getGenerativeModel({ 
         model: modelId,
         safetySettings: safetySettings,
         generationConfig: { responseMimeType: "application/json" }
     });
-    console.log('Successfully got generative model.'); // Should reach here if successful
+    // console.log('Successfully got generative model.');
 
-    // 7. Use the model
+    // 3. Build the prompt
     const availableEvents = context.events || [];
     const eventContextString = availableEvents.length > 0
       ? `\\n\\nAvailable Events Context (Name, ID, Start Time):\\n${availableEvents.map(e => `- ${e.name} (ID: ${e.api_id}, Starts: ${e.start_at || 'N/A'})`).join('\\n')}`
       : "\\n\\nNo specific event context available.";
-
-    // Build prompt parts
-    const intro = `You are an AI assistant integrated with Luma (lu.ma) event management via its API.
-Your task is to analyze user messages and determine the user's intent and extract relevant entities for API calls, using the provided context.`;
-    const userRequestSection = `\n\nUser Request: "${text}"`;
-    const contextSection = eventContextString;
     const outputFormatSection = `\n\n**Output Format:**
 Return ONLY a JSON object with the following structure:
 {
@@ -199,20 +153,19 @@ Return ONLY a JSON object with the following structure:
 *   User: "approve test@test.com for the dubai event"
     *   Output: ${exampleOutput5} (If multiple Dubai events in context)`; // End backtick for this section
     const finalInstruction = `\n\nAnalyze the user message based on the rules and context. Output only the JSON object.`;
+    const prompt = `You are an AI assistant integrated with Luma (lu.ma) event management via its API.
+Your task is to analyze user messages and determine the user's intent and extract relevant entities for API calls, using the provided context.`;
+    const userRequestSection = `\n\nUser Request: "${text}"`;
+    const contextSection = eventContextString;
+    const fullPrompt = `${prompt}${userRequestSection}${contextSection}${outputFormatSection}${rulesSection}${examplesSection}${finalInstruction}`;
 
-    // Combine prompt parts
-    const prompt = intro + userRequestSection + contextSection + outputFormatSection + rulesSection + examplesSection + finalInstruction;
-
-    // Construct the final prompt
-    const fullPrompt = `${prompt}\n\"${text}\"`;
-
-    console.log('Generating content...');
+    // 4. Generate content
+    // console.log("Calling model.generateContent...");
     const result = await model.generateContent(fullPrompt);
 
-    // Process the result
+    // 5. Process result (keep existing logic)
     const response = result.response;
     const candidates = response?.candidates;
-
     if (!candidates || candidates.length === 0 || !candidates[0].content || !candidates[0].content.parts || candidates[0].content.parts.length === 0 || !candidates[0].content.parts[0].text) {
         console.error('No valid text part found in Gemini response candidates:', JSON.stringify(result, null, 2));
         const promptFeedback = response?.promptFeedback;
@@ -272,7 +225,6 @@ Return ONLY a JSON object with the following structure:
       return parsedResponse;
 
   } catch (error) {
-    // Log the full error with stack
     console.error(`Error in processNaturalLanguageQuery: ${error.message}\nStack: ${error.stack}`);
     return {
       intent: 'UNKNOWN',
@@ -291,16 +243,12 @@ Return ONLY a JSON object with the following structure:
  * @throws {Error} - If the API call fails or returns an unexpected response.
  */
 async function formatDataWithGemini(data, userQueryContext = "the user's request") {
-  let genAI; // Define in function scope
-
   try {
-    // 1. Initialize
-    await initializeGemini();
-    if (!GoogleGenAIClass) {
-      console.error("Initialization check failed (formatter).");
-      throw new Error('Gemini AI class initialization failed.');
+    // 1. Get the singleton Gemini instance
+    const genAI = await getGeminiInstance();
+    if (!genAI) {
+      throw new Error('Failed to retrieve Gemini AI instance (formatter).');
     }
-    console.log("Initialization check passed (formatter).");
 
     // Initialize safety settings lazily
     if (!safetySettings) {
@@ -313,53 +261,16 @@ async function formatDataWithGemini(data, userQueryContext = "the user's request
         ];
     }
 
-    // 2. Instantiate
-    console.log('Instantiating GoogleGenAI (formatter)...');
-    genAI = new GoogleGenAIClass({ apiKey: config.gemini.apiKey });
-    console.log('GoogleGenAI instantiation successful (formatter).');
-
-    // 3. Verify genAI exists *immediately* after instantiation
-    if (!genAI) {
-         console.error("CRITICAL: genAI is undefined immediately after instantiation! (formatter)");
-         throw new Error('genAI instance is undefined right after creation (formatter).');
-    }
-    console.log("Instantiation verified (genAI exists) (formatter).");
-
-    // 4. Verify genAI.models exists
-    if (!genAI.models || typeof genAI.models !== 'object') {
-         console.error("CRITICAL: genAI.models is missing or not an object! (formatter)", genAI.models);
-         console.log("Logging genAI object right before models error (formatter):", genAI);
-         throw new Error('genAI.models is missing or not an object (formatter).');
-    }
-    console.log("genAI.models verified (it is an object) (formatter). Type:", typeof genAI.models);
-
-    // 5. Inspect the 'models' object itself
-    console.log('--- Inspecting genAI.models object (formatter) ---');
-    try {
-         console.log('Keys of genAI.models instance (formatter):', Object.keys(genAI.models));
-         console.log('Keys of genAI.models prototype (formatter):', Object.getPrototypeOf(genAI.models) ? Object.keys(Object.getPrototypeOf(genAI.models)) : 'Prototype not found');
-         console.log('Type of genAI.models.getGenerativeModel (formatter):', typeof genAI.models.getGenerativeModel);
-    } catch (inspectError) {
-        console.error("Error inspecting genAI.models (formatter):", inspectError)
-    }
-    console.log('--- End Inspecting genAI.models object (formatter) ---');
-
-    // 6. Attempt to get the model (THIS IS THE TARGET LINE)
+    // 2. Get the specific model using the instance
     const modelId = config.gemini.modelId || "gemini-2.0-flash";
-    console.log(`Using model ID: ${modelId} for formatting. Getting model via genAI.models.getGenerativeModel...`);
-
-    // **** ADD FINAL CHECK ****
-    if (!genAI) throw new Error("genAI became undefined before getting model! (formatter)");
-    if (!genAI.models) throw new Error("genAI.models became undefined before getting model! (formatter)");
-    // **** END FINAL CHECK ****
-
-    const model = genAI.models.getGenerativeModel({ // This is the line we are testing
+    // console.log(`Using model: ${modelId} for formatting. Getting model via genAI.models.getGenerativeModel...`);
+    const model = genAI.models.getGenerativeModel({ 
         model: modelId,
         safetySettings: safetySettings
     });
-    console.log('Successfully got generative model for formatting.'); // Should reach here if successful
+    // console.log('Successfully got generative model for formatting.');
 
-    // 7. Use the model
+    // 3. Build the prompt
     const prompt = `
 You are an AI assistant helping format API data into a user-friendly, concise, and readable response for Telegram.
 The user asked about: "${userQueryContext}"
@@ -383,11 +294,12 @@ ${JSON.stringify(data, null, 2)}
 Formatted Response:
 `;
 
-    console.log('Generating content for formatting...');
+    // 4. Generate content
+    // console.log("Calling model.generateContent for formatting...");
     const result = await model.generateContent(prompt);
 
+    // 5. Process result (keep existing logic)
     const response = result.response;
-
     if (!response || !response.candidates || response.candidates.length === 0 || !response.candidates[0].content || !response.candidates[0].content.parts || response.candidates[0].content.parts.length === 0 || !response.candidates[0].content.parts[0].text) {
         const promptFeedback = response?.promptFeedback;
         if (promptFeedback?.blockReason) {
@@ -401,13 +313,10 @@ Formatted Response:
         console.error("Invalid response structure from Gemini formatting model:", JSON.stringify(response, null, 2));
         return escapeMarkdownV2("Sorry, I couldn\'t format the data properly.");
     }
-
     const formattedText = response.candidates[0].content.parts[0].text;
-    // console.log("Formatted Gemini Response:", formattedText); // Can comment out
     return formattedText;
 
   } catch (error) {
-    // Log the full error with stack
     console.error(`Error in formatDataWithGemini: ${error.message}\nStack: ${error.stack}`);
     return escapeMarkdownV2(`Sorry, an error occurred while trying to format the response: ${error.message}. Raw data: ${JSON.stringify(data)}`);
   }
