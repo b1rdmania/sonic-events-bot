@@ -98,14 +98,14 @@ async function processNaturalLanguageQuery(text, context = {}) {
         ];
     }
 
-    // 2. Get the specific model using the instance
+    // 2. Get the specific model using the instance -- No, call generateContent directly
     const modelId = config.gemini.modelId || "gemini-2.0-flash";
     // console.log(`Using model: ${modelId}. Getting model via genAI.models.getGenerativeModel...`);
-    const model = genAI.models.getGenerativeModel({ 
-        model: modelId,
-        safetySettings: safetySettings,
-        generationConfig: { responseMimeType: "application/json" }
-    });
+    // const model = genAI.models.getGenerativeModel({ // This method does not exist on models object
+    //     model: modelId,
+    //     safetySettings: safetySettings,
+    //     generationConfig: { responseMimeType: "application/json" }
+    // });
     // console.log('Successfully got generative model.');
 
     // 3. Build the prompt
@@ -159,9 +159,15 @@ Your task is to analyze user messages and determine the user's intent and extrac
     const contextSection = eventContextString;
     const fullPrompt = `${prompt}${userRequestSection}${contextSection}${outputFormatSection}${rulesSection}${examplesSection}${finalInstruction}`;
 
-    // 4. Generate content
-    // console.log("Calling model.generateContent...");
-    const result = await model.generateContent(fullPrompt);
+    // 4. Generate content using genAI.models.generateContent directly
+    console.log(`Using model ${modelId}. Calling genAI.models.generateContent...`);
+    // const result = await model.generateContent(fullPrompt); // Old call on separate model object
+    const result = await genAI.models.generateContent({
+        model: modelId,
+        contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
+        safetySettings: safetySettings,
+        generationConfig: { responseMimeType: "application/json" },
+    });
 
     // 5. Process result (keep existing logic)
     const response = result.response;
@@ -261,13 +267,13 @@ async function formatDataWithGemini(data, userQueryContext = "the user's request
         ];
     }
 
-    // 2. Get the specific model using the instance
+    // 2. Get the specific model using the instance -- No, call generateContent directly
     const modelId = config.gemini.modelId || "gemini-2.0-flash";
     // console.log(`Using model: ${modelId} for formatting. Getting model via genAI.models.getGenerativeModel...`);
-    const model = genAI.models.getGenerativeModel({ 
-        model: modelId,
-        safetySettings: safetySettings
-    });
+    // const model = genAI.models.getGenerativeModel({ // This method does not exist on models object
+    //     model: modelId,
+    //     safetySettings: safetySettings
+    // });
     // console.log('Successfully got generative model for formatting.');
 
     // 3. Build the prompt
@@ -294,9 +300,14 @@ ${JSON.stringify(data, null, 2)}
 Formatted Response:
 `;
 
-    // 4. Generate content
-    // console.log("Calling model.generateContent for formatting...");
-    const result = await model.generateContent(prompt);
+    // 4. Generate content using genAI.models.generateContent directly
+    console.log(`Using model ${modelId}. Calling genAI.models.generateContent for formatting...`);
+    // const result = await model.generateContent(prompt); // Old call on separate model object
+    const result = await genAI.models.generateContent({
+        model: modelId,
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        safetySettings: safetySettings,
+    });
 
     // 5. Process result (keep existing logic)
     const response = result.response;
