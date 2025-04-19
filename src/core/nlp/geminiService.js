@@ -79,15 +79,18 @@ const exampleOutput5 = JSON.stringify({ intent: "REQUIRES_CLARIFICATION", entiti
  * @returns {Promise<object>} - A promise resolving to an object with intent, entities, or error/clarification.
  */
 async function processNaturalLanguageQuery(text, context = {}) {
+  let genAI; // Define in function scope
+
   try {
+    // 1. Initialize
     await initializeGemini();
-
     if (!GoogleGenAIClass) {
-         console.error("Cannot process NLP query because GoogleGenAIClass is not initialized.");
-         throw new Error('Gemini AI class is not available due to initialization failure.');
+         console.error("Initialization check failed.");
+         throw new Error('Gemini AI class initialization failed.');
     }
+    console.log("Initialization check passed.");
 
-    // Initialize safety settings lazily
+    // Initialize safety settings lazily (moved after init check)
     if (!safetySettings) {
         const { HarmCategory, HarmBlockThreshold } = await import('@google/genai');
         safetySettings = [
@@ -98,18 +101,54 @@ async function processNaturalLanguageQuery(text, context = {}) {
         ];
     }
 
-    const genAI = await initializeGemini(); // Get the initialized instance
+    // 2. Instantiate
+    console.log('Instantiating GoogleGenAI...');
+    genAI = new GoogleGenAIClass({ apiKey: config.gemini.apiKey }); // Assign to local variable
+    console.log('GoogleGenAI instantiation successful.');
 
-    // --- USE CORRECT SDK PATTERN: genAI.models.getGenerativeModel --- 
+    // 3. Verify genAI exists *immediately* after instantiation
+    if (!genAI) {
+         console.error("CRITICAL: genAI is undefined immediately after instantiation!");
+         throw new Error('genAI instance is undefined right after creation.');
+    }
+    console.log("Instantiation verified (genAI exists).");
+
+    // 4. Verify genAI.models exists
+    if (!genAI.models || typeof genAI.models !== 'object') {
+         console.error("CRITICAL: genAI.models is missing or not an object!", genAI.models);
+         console.log("Logging genAI object right before models error:", genAI); // Log genAI if models is missing
+         throw new Error('genAI.models is missing or not an object.');
+    }
+    console.log("genAI.models verified (it is an object). Type:", typeof genAI.models);
+
+    // 5. Inspect the 'models' object itself
+    console.log('--- Inspecting genAI.models object ---');
+    try {
+         console.log('Keys of genAI.models instance:', Object.keys(genAI.models));
+         console.log('Keys of genAI.models prototype:', Object.getPrototypeOf(genAI.models) ? Object.keys(Object.getPrototypeOf(genAI.models)) : 'Prototype not found');
+         console.log('Type of genAI.models.getGenerativeModel:', typeof genAI.models.getGenerativeModel);
+    } catch (inspectError) {
+        console.error("Error inspecting genAI.models:", inspectError)
+    }
+    console.log('--- End Inspecting genAI.models object ---');
+
+    // 6. Attempt to get the model (THIS IS THE TARGET LINE)
     const modelId = config.gemini.modelId || "gemini-2.0-flash";
-    console.log(`Using model: ${modelId}. Getting model via genAI.models.getGenerativeModel...`);
-    const model = genAI.models.getGenerativeModel({ // Correct method call on models submodule
+    console.log(`Using model ID: ${modelId}. Getting model via genAI.models.getGenerativeModel...`);
+
+    // **** ADD FINAL CHECK ****
+    if (!genAI) throw new Error("genAI became undefined before getting model!");
+    if (!genAI.models) throw new Error("genAI.models became undefined before getting model!");
+    // **** END FINAL CHECK ****
+
+    const model = genAI.models.getGenerativeModel({ // This is the line we are testing
         model: modelId,
         safetySettings: safetySettings,
         generationConfig: { responseMimeType: "application/json" }
     });
-    console.log('Successfully got generative model.');
+    console.log('Successfully got generative model.'); // Should reach here if successful
 
+    // 7. Use the model
     const availableEvents = context.events || [];
     const eventContextString = availableEvents.length > 0
       ? `\\n\\nAvailable Events Context (Name, ID, Start Time):\\n${availableEvents.map(e => `- ${e.name} (ID: ${e.api_id}, Starts: ${e.start_at || 'N/A'})`).join('\\n')}`
@@ -167,9 +206,8 @@ Return ONLY a JSON object with the following structure:
     // Construct the final prompt
     const fullPrompt = `${prompt}\n\"${text}\"`;
 
-    // Now call generateContent on the obtained model object
-    console.log("Calling model.generateContent...");
-    const result = await model.generateContent(fullPrompt); // Use the model object obtained above
+    console.log('Generating content...');
+    const result = await model.generateContent(fullPrompt);
 
     // Process the result
     const response = result.response;
@@ -234,33 +272,13 @@ Return ONLY a JSON object with the following structure:
       return parsedResponse;
 
   } catch (error) {
-    console.error('Error during Gemini processing in processNaturalLanguageQuery:', error);
-    // Handle potential API errors or other issues
-    if (error.response && error.response.promptFeedback?.blockReason) {
-        console.error("Gemini API request blocked:", error.response.promptFeedback.blockReason);
-        return {
-            intent: 'BLOCKED',
-            entities: {},
-            originalText: text,
-            error: `Request blocked due to safety settings: ${error.response.promptFeedback.blockReason}`
-        };
-    }
-    if (error.name === 'GoogleGenerativeAIFetchError' || error.message?.includes('FetchError')) {
-        const status = error.status || error.cause?.status;
-        const message = error.message;
-        console.error(`Gemini API Fetch Error: Status ${status}, Message: ${message}`);
-        return {
-            intent: 'UNKNOWN',
-            entities: {},
-            originalText: text,
-            error: `Failed to get response from AI model (API Error: ${status || 'Unknown Status'})`
-        };
-    }
+    // Log the full error with stack
+    console.error(`Error in processNaturalLanguageQuery: ${error.message}\nStack: ${error.stack}`);
     return {
       intent: 'UNKNOWN',
       entities: {},
       originalText: text,
-      error: `Failed to get response from AI model: ${error.message}` // Include error message
+      error: `Processing failed: ${error.message}`
     };
   }
 }
@@ -273,13 +291,16 @@ Return ONLY a JSON object with the following structure:
  * @throws {Error} - If the API call fails or returns an unexpected response.
  */
 async function formatDataWithGemini(data, userQueryContext = "the user's request") {
-  try {
-    await initializeGemini();
+  let genAI; // Define in function scope
 
+  try {
+    // 1. Initialize
+    await initializeGemini();
     if (!GoogleGenAIClass) {
-      console.error("Cannot format data because GoogleGenAIClass is not initialized.");
-      throw new Error('Gemini AI class is not available due to initialization failure.');
+      console.error("Initialization check failed (formatter).");
+      throw new Error('Gemini AI class initialization failed.');
     }
+    console.log("Initialization check passed (formatter).");
 
     // Initialize safety settings lazily
     if (!safetySettings) {
@@ -292,17 +313,53 @@ async function formatDataWithGemini(data, userQueryContext = "the user's request
         ];
     }
 
-    const genAI = await initializeGemini(); // Get the initialized instance
+    // 2. Instantiate
+    console.log('Instantiating GoogleGenAI (formatter)...');
+    genAI = new GoogleGenAIClass({ apiKey: config.gemini.apiKey });
+    console.log('GoogleGenAI instantiation successful (formatter).');
 
-    // --- USE CORRECT SDK PATTERN: genAI.models.getGenerativeModel --- 
+    // 3. Verify genAI exists *immediately* after instantiation
+    if (!genAI) {
+         console.error("CRITICAL: genAI is undefined immediately after instantiation! (formatter)");
+         throw new Error('genAI instance is undefined right after creation (formatter).');
+    }
+    console.log("Instantiation verified (genAI exists) (formatter).");
+
+    // 4. Verify genAI.models exists
+    if (!genAI.models || typeof genAI.models !== 'object') {
+         console.error("CRITICAL: genAI.models is missing or not an object! (formatter)", genAI.models);
+         console.log("Logging genAI object right before models error (formatter):", genAI);
+         throw new Error('genAI.models is missing or not an object (formatter).');
+    }
+    console.log("genAI.models verified (it is an object) (formatter). Type:", typeof genAI.models);
+
+    // 5. Inspect the 'models' object itself
+    console.log('--- Inspecting genAI.models object (formatter) ---');
+    try {
+         console.log('Keys of genAI.models instance (formatter):', Object.keys(genAI.models));
+         console.log('Keys of genAI.models prototype (formatter):', Object.getPrototypeOf(genAI.models) ? Object.keys(Object.getPrototypeOf(genAI.models)) : 'Prototype not found');
+         console.log('Type of genAI.models.getGenerativeModel (formatter):', typeof genAI.models.getGenerativeModel);
+    } catch (inspectError) {
+        console.error("Error inspecting genAI.models (formatter):", inspectError)
+    }
+    console.log('--- End Inspecting genAI.models object (formatter) ---');
+
+    // 6. Attempt to get the model (THIS IS THE TARGET LINE)
     const modelId = config.gemini.modelId || "gemini-2.0-flash";
-    console.log(`Using model: ${modelId} for formatting. Getting model via genAI.models.getGenerativeModel...`);
-    const model = genAI.models.getGenerativeModel({ // Correct method call on models submodule
+    console.log(`Using model ID: ${modelId} for formatting. Getting model via genAI.models.getGenerativeModel...`);
+
+    // **** ADD FINAL CHECK ****
+    if (!genAI) throw new Error("genAI became undefined before getting model! (formatter)");
+    if (!genAI.models) throw new Error("genAI.models became undefined before getting model! (formatter)");
+    // **** END FINAL CHECK ****
+
+    const model = genAI.models.getGenerativeModel({ // This is the line we are testing
         model: modelId,
         safetySettings: safetySettings
     });
-    console.log('Successfully got generative model for formatting.');
+    console.log('Successfully got generative model for formatting.'); // Should reach here if successful
 
+    // 7. Use the model
     const prompt = `
 You are an AI assistant helping format API data into a user-friendly, concise, and readable response for Telegram.
 The user asked about: "${userQueryContext}"
@@ -326,9 +383,8 @@ ${JSON.stringify(data, null, 2)}
 Formatted Response:
 `;
 
-    // Now call generateContent on the obtained model object
-    console.log("Calling model.generateContent for formatting...");
-    const result = await model.generateContent(prompt); // Use the model object obtained above
+    console.log('Generating content for formatting...');
+    const result = await model.generateContent(prompt);
 
     const response = result.response;
 
@@ -351,11 +407,8 @@ Formatted Response:
     return formattedText;
 
   } catch (error) {
-    console.error('Error during Gemini processing in formatDataWithGemini:', error);
-    if (error.response && error.response.promptFeedback?.blockReason) {
-        console.error("Formatting request blocked:", error.response.promptFeedback.blockReason);
-        return escapeMarkdownV2(`Failed to format response due to safety settings: ${error.response.promptFeedback.blockReason}`);
-    }
+    // Log the full error with stack
+    console.error(`Error in formatDataWithGemini: ${error.message}\nStack: ${error.stack}`);
     return escapeMarkdownV2(`Sorry, an error occurred while trying to format the response: ${error.message}. Raw data: ${JSON.stringify(data)}`);
   }
 }
