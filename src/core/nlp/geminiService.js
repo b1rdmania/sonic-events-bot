@@ -36,7 +36,14 @@ async function initializeGemini() {
     }
 
     console.log('Instantiating GoogleGenAI using { apiKey: ... }');
-    return new GoogleGenAIClass({ apiKey: config.gemini.apiKey }); // Correct instantiation for v0.9.0
+    // Explicitly set the base API endpoint
+    const apiEndpoint = 'generativelanguage.googleapis.com'; 
+    console.log(`Attempting instantiation with explicit apiEndpoint: ${apiEndpoint}`);
+    // return new GoogleGenAIClass({ apiKey: config.gemini.apiKey }); // Old instantiation
+    return new GoogleGenAIClass({ 
+        apiKey: config.gemini.apiKey,
+        apiEndpoint: apiEndpoint 
+    });
   } catch (error) {
       console.error('Failed to dynamically import or initialize @google/genai:', error);
       GoogleGenAIClass = null; // Ensure it's null on failure
