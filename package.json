@@ -20,7 +20,7 @@
   },
   "homepage": "https://github.com/b1rdmania/sonic-events-bot#readme",
   "dependencies": {
-    "@google/generative-ai": "^0.24.0",
+    "@google/genai": "latest",
     "@prisma/client": "^6.6.0",
     "airtable": "^0.12.2",
     "dotenv": "^16.4.7",

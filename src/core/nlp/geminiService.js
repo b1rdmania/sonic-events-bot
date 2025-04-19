@@ -1,14 +1,15 @@
-const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/generative-ai');
+const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/genai');
 const config = require('../../config');
+const { escapeMarkdownV2 } = require('../services/escapeUtil');
 
 if (!config.gemini.apiKey) {
   throw new Error('Missing required environment variable: GEMINI_API_KEY');
 }
 
-// Initialize the Generative AI client
+// Initialize the Generative AI client using the new SDK pattern
 const genAI = new GoogleGenerativeAI(config.gemini.apiKey);
 
-// Define safety settings (adjust as needed)
+// Define safety settings (structure might be the same, constants imported from new package)
 const safetySettings = [
   {
     category: HarmCategory.HARM_CATEGORY_HARASSMENT,
@@ -28,9 +29,8 @@ const safetySettings = [
   },
 ];
 
-// Select the model
-// Use a model suitable for function calling/structured output if possible (e.g., gemini-pro)
-const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash', safetySettings });
+// Model selection happens later, during the generateContent call
+const modelName = 'gemini-2.0-flash'; // Use the desired model name
 
 /**
  * Processes natural language text using Gemini to extract intent and entities.
@@ -41,10 +41,8 @@ const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash', safetySettin
 async function processNaturalLanguageQuery(text, context = {}) {
   console.log(`Processing NLP query: "${text}" with context:`, context);
 
-  // Extract relevant context (e.g., list of event names/IDs)
   const eventListContext = context.events?.map(e => `- ${escapeMarkdownV2(e.name || 'Unknown Name')} (ID: ${escapeMarkdownV2(e.api_id || 'N/A')})`).join('\n') || 'No events available in context.';
 
-  // Simplified Prompt
   const prompt = `
 You are an assistant managing Luma events via Telegram.
 User request: "${text}"
@@ -71,21 +69,31 @@ JSON Response:
     // Add a small delay to help mitigate rapid-fire requests hitting free tier limit
     await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
 
-    const result = await model.generateContent(prompt);
+    // Get the model instance using the new client
+    const model = genAI.getGenerativeModel({ model: modelName });
+
+    // Call generateContent with the new structure
+    const result = await model.generateContent({
+        contents: [{ parts: [{ text: prompt }] }],
+        safetySettings: safetySettings
+        // generationConfig could be added here if needed
+    });
+
+    // Access response text using property (assuming .text based on Python example)
     const response = result.response;
-    const responseText = response.text();
+    const responseText = response.text; // Use .text property
+
     console.log("Raw Gemini Response Text (pre-cleaning):", responseText);
 
-    // Attempt to parse the JSON response
+    // Attempt to parse the JSON response (using existing robust logic)
     let parsedResponse;
-    let cleanedText = responseText.trim(); // Start with basic trimming
+    let cleanedText = responseText.trim();
 
     try {
       parsedResponse = JSON.parse(cleanedText);
     } catch (initialParseError) {
       console.warn("Initial JSON.parse failed, attempting extraction:", initialParseError.message);
-      // If initial parse fails, try extracting content between {}
-      const jsonMatch = cleanedText.match(/{.*}/s); // Find text between the first { and last }
+      const jsonMatch = cleanedText.match(/{.*}/s);
       if (jsonMatch && jsonMatch[0]) {
         cleanedText = jsonMatch[0];
         console.log("Extracted JSON-like content:", cleanedText);
@@ -99,11 +107,10 @@ JSON Response:
             entities: {},
             originalText: text,
             error: 'Failed to parse response from AI model.',
-            rawResponse: responseText // Log the original raw response
+            rawResponse: responseText
           };
         }
       } else {
-        // If no {} block found after initial parse failure
         console.error("Failed to parse Gemini JSON response and no {} block found:", initialParseError);
         console.error("Raw text that failed parsing:", responseText);
         return {
@@ -117,13 +124,12 @@ JSON Response:
     }
 
     console.log("Parsed Gemini Response:", parsedResponse);
-    // Add original text for reference downstream
     parsedResponse.originalText = text;
     return parsedResponse;
 
   } catch (error) {
     console.error("Error calling Gemini API:", error);
-    // Handle potential safety blocks
+    // Attempt to access potential safety feedback (structure might differ in new SDK)
     if (error.response && error.response.promptFeedback?.blockReason) {
         console.error("Gemini API request blocked:", error.response.promptFeedback.blockReason);
         return {
@@ -137,7 +143,7 @@ JSON Response:
       intent: 'UNKNOWN',
       entities: {},
       originalText: text,
-      error: 'Failed to get response from AI model.'
+      error: 'Failed to get response from AI model.' // Keep generic error for now
     };
   }
 }
