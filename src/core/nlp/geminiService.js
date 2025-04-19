@@ -79,22 +79,21 @@ JSON Response:
 
     console.log("Raw Gemini API Result:", JSON.stringify(result, null, 2)); // Log raw result
 
-    // Access response text using the full structure
-    const response = result.response;
-    console.log("Gemini API Response object:", JSON.stringify(response, null, 2)); // Log response object
-
-    const candidates = response.candidates;
+    // Access candidates directly from the result object
+    const candidates = result.candidates;
 
     if (!candidates || candidates.length === 0 || !candidates[0].content || !candidates[0].content.parts || candidates[0].content.parts.length === 0 || !candidates[0].content.parts[0].text) {
-      console.error('No valid text part found in Gemini response candidates:', JSON.stringify(response, null, 2));
-      // Check for block reason
-      if (response.promptFeedback?.blockReason) {
-        console.error("Prompt blocked:", response.promptFeedback.blockReason);
+      console.error('No valid text part found in Gemini response candidates:', JSON.stringify(result, null, 2));
+      // Check for block reason (assuming it might be on result or result.promptFeedback?)
+      // Let's check the raw result structure log if this part fails
+      const promptFeedback = result.promptFeedback; // Check if promptFeedback exists on result
+      if (promptFeedback?.blockReason) {
+        console.error("Prompt blocked:", promptFeedback.blockReason);
          return {
             intent: 'BLOCKED',
             entities: {},
             originalText: text,
-            error: `Request blocked due to safety settings: ${response.promptFeedback.blockReason}`
+            error: `Request blocked due to safety settings: ${promptFeedback.blockReason}`
         };
       }
       // Check for finish reason in candidate
@@ -105,7 +104,7 @@ JSON Response:
             entities: {},
             originalText: text,
             error: `AI response generation stopped unexpectedly (${candidates[0].finishReason}).`,
-            rawResponse: JSON.stringify(response, null, 2)
+            rawResponse: JSON.stringify(result, null, 2)
           };
       }
       // Generic error if no specific reason found
@@ -114,7 +113,7 @@ JSON Response:
         entities: {},
         originalText: text,
         error: 'Received an empty or invalid response structure from AI model.',
-        rawResponse: JSON.stringify(response, null, 2) // Log the full response structure
+        rawResponse: JSON.stringify(result, null, 2) // Log the full result structure
       };
     }
     const responseText = candidates[0].content.parts[0].text;
