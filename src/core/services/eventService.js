@@ -22,19 +22,19 @@ async function listOrgEvents(encryptedApiKey, options = {}) {
     return 'No upcoming events found for the linked Luma account\.'; // Escaped period
   }
 
-  let reply = `Found ${result.entries.length} event\(s\):\n\n`; // Escaped parentheses
+  let reply = `Found ${result.entries.length} event\(s\):\n\n`;
   result.entries.forEach((event, index) => {
     const startTime = event.start_at ? new Date(event.start_at).toLocaleString() : 'N/A';
     const eventName = escapeMarkdownV2(event.name || 'Unnamed Event');
     const eventId = escapeMarkdownV2(event.api_id);
     const escapedStartTime = escapeMarkdownV2(startTime);
 
-    reply += `${index + 1}\. *${eventName}* \(ID: \`${eventId}\`\)\n`; // Escaped ., italics, escaped (), backticks
+    reply += `${index + 1}\. *${eventName}* \(ID: \`${eventId}\`\)\n`;
     reply += `   Starts: ${escapedStartTime}\n`;
   });
 
   if (result.has_more) {
-    reply += `\n_(More events available \- pagination not yet implemented)_`; // Italics, escaped hyphen
+    reply += `\n_\(More events available \- pagination not yet implemented\)_`;
   }
 
   return reply;

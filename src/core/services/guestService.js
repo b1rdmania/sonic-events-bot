@@ -40,7 +40,7 @@ async function getEventGuests(encryptedApiKey, eventApiId, options = {}) {
   });
 
   if (result.has_more) {
-      reply += `\n_(More guests available \- pagination not yet implemented)_`;
+      reply += `\n_\(More guests available \- pagination not yet implemented\)_`;
   }
 
   return reply;
@@ -81,7 +81,7 @@ async function getEventGuestCount(encryptedApiKey, eventApiId, options = {}) {
   }
 
   if (result.has_more) {
-    reply += `\n_(Note: Counts based on the first batch of guests retrieved\. More guests exist\.)_`;
+    reply += `\n_\(Note: Counts based on the first batch of guests retrieved\. More guests exist\.\)_`;
   }
 
   return reply;
