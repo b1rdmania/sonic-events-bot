@@ -77,22 +77,43 @@ JSON Response:
         // generationConfig could be added here if needed
     });
 
-    // Access response text using the .text convenience accessor
+    // Access response text using the full structure
     const response = result.response;
-    // const candidates = response.candidates;
+    const candidates = response.candidates;
 
-    // if (!candidates || candidates.length === 0 || !candidates[0].content || !candidates[0].content.parts || candidates[0].content.parts.length === 0) {
-    //   console.error('No valid candidates found in Gemini response:', JSON.stringify(response));
-    //   return {
-    //     intent: 'UNKNOWN',
-    //     entities: {},
-    //     originalText: text,
-    //     error: 'Received an empty or invalid response structure from AI model.',
-    //     rawResponse: JSON.stringify(response) // Log the full response structure
-    //   };
-    // }
-    // const responseText = candidates[0].content.parts[0].text;
-    const responseText = response.text(); // Use the text() method/accessor
+    if (!candidates || candidates.length === 0 || !candidates[0].content || !candidates[0].content.parts || candidates[0].content.parts.length === 0 || !candidates[0].content.parts[0].text) {
+      console.error('No valid text part found in Gemini response candidates:', JSON.stringify(response, null, 2));
+      // Check for block reason
+      if (response.promptFeedback?.blockReason) {
+        console.error("Prompt blocked:", response.promptFeedback.blockReason);
+         return {
+            intent: 'BLOCKED',
+            entities: {},
+            originalText: text,
+            error: `Request blocked due to safety settings: ${response.promptFeedback.blockReason}`
+        };
+      }
+      // Check for finish reason in candidate
+      if (candidates && candidates.length > 0 && candidates[0].finishReason && candidates[0].finishReason !== 'STOP') {
+        console.error("Candidate finished with reason:", candidates[0].finishReason);
+         return {
+            intent: 'UNKNOWN',
+            entities: {},
+            originalText: text,
+            error: `AI response generation stopped unexpectedly (${candidates[0].finishReason}).`,
+            rawResponse: JSON.stringify(response, null, 2)
+          };
+      }
+      // Generic error if no specific reason found
+      return {
+        intent: 'UNKNOWN',
+        entities: {},
+        originalText: text,
+        error: 'Received an empty or invalid response structure from AI model.',
+        rawResponse: JSON.stringify(response, null, 2) // Log the full response structure
+      };
+    }
+    const responseText = candidates[0].content.parts[0].text;
 
     console.log("Raw Gemini Response Text (pre-cleaning):", responseText);
 
