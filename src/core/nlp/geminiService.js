@@ -118,35 +118,46 @@ JSON Response:
     const result = await model.generateContent(prompt);
     const response = result.response;
     const responseText = response.text();
-
-    // Clean the response text - Gemini might include markdown ```json ... ``` or stray characters
-    // Try to extract the main JSON object
-    const jsonMatch = responseText.match(/\\{.*\\}/s); // Find text between the first { and last }
-    let cleanedText = '';
-    if (jsonMatch && jsonMatch[0]) {
-      cleanedText = jsonMatch[0];
-    } else {
-      // Fallback if no clear JSON object is found (e.g., model refused)
-      cleanedText = responseText.replace(/^```json\\s*|\\s*```$/g, '').trim();
-    }
-
     console.log("Raw Gemini Response Text (pre-cleaning):", responseText);
-    console.log("Cleaned Text for JSON Parsing:", cleanedText);
 
     // Attempt to parse the JSON response
     let parsedResponse;
+    let cleanedText = responseText.trim(); // Start with basic trimming
+
     try {
       parsedResponse = JSON.parse(cleanedText);
-    } catch (parseError) {
-      console.error("Failed to parse Gemini JSON response:", parseError);
-      console.error("Raw text that failed parsing:", cleanedText);
-      return {
-        intent: 'UNKNOWN',
-        entities: {},
-        originalText: text,
-        error: 'Failed to parse response from AI model.',
-        rawResponse: cleanedText // Include raw response for debugging
-      };
+    } catch (initialParseError) {
+      console.warn("Initial JSON.parse failed, attempting extraction:", initialParseError.message);
+      // If initial parse fails, try extracting content between {}
+      const jsonMatch = cleanedText.match(/\\{.*\\}/s); // Find text between the first { and last }
+      if (jsonMatch && jsonMatch[0]) {
+        cleanedText = jsonMatch[0];
+        console.log("Extracted JSON-like content:", cleanedText);
+        try {
+          parsedResponse = JSON.parse(cleanedText);
+        } catch (secondaryParseError) {
+          console.error("Failed to parse extracted Gemini JSON response:", secondaryParseError);
+          console.error("Raw text that failed parsing (after extraction):", cleanedText);
+          return {
+            intent: 'UNKNOWN',
+            entities: {},
+            originalText: text,
+            error: 'Failed to parse response from AI model.',
+            rawResponse: responseText // Log the original raw response
+          };
+        }
+      } else {
+        // If no {} block found after initial parse failure
+        console.error("Failed to parse Gemini JSON response and no {} block found:", initialParseError);
+        console.error("Raw text that failed parsing:", responseText);
+        return {
+          intent: 'UNKNOWN',
+          entities: {},
+          originalText: text,
+          error: 'Failed to parse response from AI model.',
+          rawResponse: responseText
+        };
+      }
     }
 
     console.log("Parsed Gemini Response:", parsedResponse);
