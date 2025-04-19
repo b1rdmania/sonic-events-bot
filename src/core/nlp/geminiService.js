@@ -1,15 +1,50 @@
 // Force redeploy again after cache purge
 // Force redeploy
-const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/genai');
+// const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/genai'); // Original import commented out for debugging
 const config = require('../../config');
 const { escapeMarkdownV2 } = require('../services/escapeUtil');
 
+// --- START DEBUG LOGGING ---
+console.log('--- Debugging @google/genai import ---');
+let GoogleGenerativeAI;
+let HarmCategory;
+let HarmBlockThreshold;
+try {
+    const genaiModule = require('@google/genai');
+    console.log('Raw required module:', genaiModule);
+    // Check if it's an object before getting keys
+    if (genaiModule && typeof genaiModule === 'object') {
+        console.log('Keys in required module:', Object.keys(genaiModule));
+    } else {
+        console.log('Required module is not an object or is null/undefined');
+    }
+
+    // Destructure after logging the raw module
+    ({ GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = genaiModule);
+
+    console.log('Destructured GoogleGenerativeAI:', GoogleGenerativeAI);
+    console.log('Type of GoogleGenerativeAI:', typeof GoogleGenerativeAI);
+
+    // Also log the config value to ensure it's loaded
+    console.log('API Key from config:', config?.gemini?.apiKey ? 'Exists' : 'MISSING or undefined');
+
+} catch (importError) {
+    console.error('ERROR during import:', importError);
+    // Rethrow or handle appropriately if needed, but logging is key
+    throw importError;
+}
+console.log('--- End Debugging @google/genai import ---');
+// --- END DEBUG LOGGING ---
+
 if (!config.gemini.apiKey) {
+  // This check might be redundant now due to logging above, but keep for safety
   throw new Error('Missing required environment variable: GEMINI_API_KEY');
 }
 
-// Initialize the Gemini client
-const genAI = new GoogleGenerativeAI(config.gemini.apiKey);
+// Line 11: The problematic line
+console.log('Attempting to instantiate GoogleGenerativeAI...'); // Added log
+const genAI = new GoogleGenerativeAI(config.gemini.apiKey); // <-- Line 11 (effectively)
+console.log('Instantiation successful (this message likely won\'t appear)'); // Added log - Fixed potential string issue here
 
 // Define safety settings
 const safetySettings = [
