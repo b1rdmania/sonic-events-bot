@@ -9,7 +9,7 @@ if (!config.gemini.apiKey) {
 // Initialize the Gemini client
 const genAI = new GoogleGenerativeAI({ apiKey: config.gemini.apiKey });
 
-// Define safety settings (structure might be the same, constants imported from new package)
+// Define safety settings
 const safetySettings = [
   {
     category: HarmCategory.HARM_CATEGORY_HARASSMENT,
@@ -124,32 +124,35 @@ Return ONLY a JSON object with the following structure:
   const prompt = intro + userRequestSection + contextSection + outputFormatSection + rulesSection + examplesSection + finalInstruction;
 
   try {
+    // Define the model *inside* the function
+    const model = genAI.getGenerativeModel({
+        model: "gemini-1.5-pro-latest", // Or use a specific model name variable
+        safetySettings: safetySettings,
+        generationConfig: { responseMimeType: "application/json" }
+    });
+
     // Add a small delay to help mitigate rapid-fire requests hitting free tier limit
     await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
 
     // Construct the final prompt
-    const fullPrompt = `${prompt}\n"${text}"`;
+    const fullPrompt = `${prompt}\n"${text}"`; // Ensure prompt variable is used correctly
 
     // console.debug("Sending prompt to Gemini:", fullPrompt); // Uncomment for debugging
 
     // Call generateContent directly on the models collection using the new SDK pattern
-    const result = await genAI.models.generateContent({
-        model: model, // Pass model name here
-        contents: [{ role: 'user', parts: [{ text: fullPrompt }] }], // Adjust structure if needed by new SDK
-        safetySettings: safetySettings
-        // generationConfig could be added here if needed
-    });
+    const result = await model.generateContent(fullPrompt); // Call generateContent on the model instance
 
     console.log("Raw Gemini API Result:", JSON.stringify(result, null, 2)); // Log raw result
 
-    // Access candidates directly from the result object
-    const candidates = result.candidates;
+    // --- Switch to using result.response structure from here based on previous logs --- 
+    const response = result.response; 
+    const candidates = response?.candidates;
 
     if (!candidates || candidates.length === 0 || !candidates[0].content || !candidates[0].content.parts || candidates[0].content.parts.length === 0 || !candidates[0].content.parts[0].text) {
       console.error('No valid text part found in Gemini response candidates:', JSON.stringify(result, null, 2));
       // Check for block reason (assuming it might be on result or result.promptFeedback?)
       // Let's check the raw result structure log if this part fails
-      const promptFeedback = result.promptFeedback; // Check if promptFeedback exists on result
+      const promptFeedback = response?.promptFeedback; // Check if promptFeedback exists on result
       if (promptFeedback?.blockReason) {
         console.error("Prompt blocked:", promptFeedback.blockReason);
          return {
@@ -187,38 +190,23 @@ Return ONLY a JSON object with the following structure:
     let parsedResponse;
     let cleanedText = responseText.trim();
 
+    // Check if response looks like markdown ```json ... ``` block
+    if (cleanedText.startsWith('```json') && cleanedText.endsWith('```')) {
+        cleanedText = cleanedText.substring(7, cleanedText.length - 3).trim();
+    }
+
     try {
       parsedResponse = JSON.parse(cleanedText);
-    } catch (initialParseError) {
-      console.warn("Initial JSON.parse failed, attempting extraction:", initialParseError.message);
-      const jsonMatch = cleanedText.match(/{.*}/s);
-      if (jsonMatch && jsonMatch[0]) {
-        cleanedText = jsonMatch[0];
-        console.log("Extracted JSON-like content:", cleanedText);
-        try {
-          parsedResponse = JSON.parse(cleanedText);
-        } catch (secondaryParseError) {
-          console.error("Failed to parse extracted Gemini JSON response:", secondaryParseError);
-          console.error("Raw text that failed parsing (after extraction):", cleanedText);
-          return {
+    } catch (parseError) {
+        console.error("Failed to parse Gemini JSON response:", parseError);
+        console.error("Raw text that failed parsing (after cleaning):", cleanedText);
+         return {
             intent: 'UNKNOWN',
             entities: {},
             originalText: text,
             error: 'Failed to parse response from AI model.',
-            rawResponse: responseText
-          };
-        }
-      } else {
-        console.error("Failed to parse Gemini JSON response and no {} block found:", initialParseError);
-        console.error("Raw text that failed parsing:", responseText);
-        return {
-          intent: 'UNKNOWN',
-          entities: {},
-          originalText: text,
-          error: 'Failed to parse response from AI model.',
-          rawResponse: responseText
+            rawResponse: responseText // Log original text before cleaning
         };
-      }
     }
 
     console.log("Parsed Gemini Response:", parsedResponse);
@@ -269,45 +257,68 @@ Return ONLY a JSON object with the following structure:
  * @throws {Error} - If the API call fails or returns an unexpected response.
  */
 async function formatDataWithGemini(data, userQueryContext = "the user's request") {
-  const formatPrompt = `
-You are an AI assistant helping format data retrieved from the Luma API into a concise, user-friendly, natural language response for a chat bot (using Telegram MarkdownV2).
+  // Define the model *inside* the function
+  const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-pro-latest", // Or use a specific model name variable
+      safetySettings: safetySettings
+      // No generationConfig needed for text response
+  });
 
-**Formatting Rules:**
-*   Be concise and informative.
-*   Use Telegram MarkdownV2 for formatting (bold, italics, inline code, links). Remember to escape characters: _, *, [, ], (, ), ~, \`, >, #, +, -, =, |, {, }, ., !
-*   If data includes lists (like events or guests), format them clearly, potentially using bullet points (*).
-*   If data includes flags like 'has_more', mention it (e.g., "Showing the first X results. There are more.").
-*   If formatting event details, include key info like name, start time, and maybe location unless a specific detail was requested.
-*   If formatting a specific requested detail (e.g., 'name', 'location'), just provide that detail clearly.
-*   If data is empty or indicates an error state passed to you, state that clearly (e.g., "No events found matching your criteria.", "No guests found with status 'pending'.").
-*   Tailor the response slightly based on the user's original query context if provided.
+  const prompt = `
+You are an AI assistant helping format API data into a user-friendly, concise, and readable response for Telegram.
+The user asked about: "${userQueryContext}"
+The raw data obtained from the Luma API is below (JSON format).
 
-**Data:**
+Format this data into a natural language response.
+- Use MarkdownV2 for formatting (e.g., *bold*, _italic_, \`code\`, [links](url)). Remember to escape characters like '.', '-', '(', ')' with a preceding backslash where necessary.
+- Be concise. Avoid conversational filler unless the data is empty.
+- If listing items (events, guests), use bullet points or numbered lists.
+- If showing event details, highlight key information like name, date/time, and location (if available).
+- If data contains \`has_more: true\`, mention that there are more results not shown.
+- If data is empty or null, state that clearly (e.g., "No events found.", "No guests match that criteria.", "Couldn't find details for that event ID.").
+- Make URLs clickable using MarkdownV2 link format. Escape URL characters if needed.
+- Format dates/times clearly (e.g., "May 20, 2024 at 10:00 AM PDT"). Assume times are in the event's timezone unless specified otherwise.
+
+Raw Data:
 \`\`\`json
 ${JSON.stringify(data, null, 2)}
 \`\`\`
 
-**User Query Context:**
-"${userQueryContext}"
-
-Format the above data into a natural language response based on the rules and the user's likely request. Remember to escape MarkdownV2 characters.
+Formatted Response:
 `;
 
   try {
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-pro-latest', // Use the appropriate model
-      // safetySettings: adjustedSafetySettings, // Consider applying safety settings if needed
-    });
+    // Add a small delay
+    await new Promise(resolve => setTimeout(resolve, 200));
 
-    const result = await model.generateContent(formatPrompt);
-    const response = await result.response;
-    const text = response.text();
-    // console.debug("Gemini Formatting Response:", text); // Uncomment for debugging
-    return text;
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+
+    if (!response || !response.candidates || response.candidates.length === 0 || !response.candidates[0].content || !response.candidates[0].content.parts || response.candidates[0].content.parts.length === 0 || !response.candidates[0].content.parts[0].text) {
+        const promptFeedback = response?.promptFeedback;
+        if (promptFeedback?.blockReason) {
+            console.error("Formatting prompt blocked:", promptFeedback.blockReason);
+            return escapeMarkdownV2(`I couldn't format the response due to safety settings: ${promptFeedback.blockReason}`);
+        }
+        if (response?.candidates?.[0]?.finishReason && response.candidates[0].finishReason !== 'STOP') {
+           console.error("Formatting candidate finished with reason:", response.candidates[0].finishReason);
+           return escapeMarkdownV2(`Sorry, I encountered an issue while formatting the data (${response.candidates[0].finishReason}).`);
+        }
+        console.error("Invalid response structure from Gemini formatting model:", JSON.stringify(response, null, 2));
+        return escapeMarkdownV2("Sorry, I couldn't format the data properly.");
+    }
+
+    const formattedText = response.candidates[0].content.parts[0].text;
+    console.log("Formatted Gemini Response:", formattedText);
+    return formattedText;
+
   } catch (error) {
-    console.error('Error formatting data with Gemini:', error);
-    // Fallback to simple JSON stringification if Gemini fails
-    return `\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``;
+    console.error("Error calling Gemini API for formatting:", error);
+    if (error.response && error.response.promptFeedback?.blockReason) {
+        console.error("Formatting request blocked:", error.response.promptFeedback.blockReason);
+        return escapeMarkdownV2(`Failed to format response due to safety settings: ${error.response.promptFeedback.blockReason}`);
+    }
+    return escapeMarkdownV2(`Sorry, an error occurred while trying to format the response. Raw data: ${JSON.stringify(data)}`);
   }
 }
 
