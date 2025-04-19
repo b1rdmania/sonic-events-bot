@@ -105,17 +105,11 @@ async function processNaturalLanguageQuery(text, context = {}) {
     const eventContextString = availableEvents.length > 0
       ? `Here is the list of relevant Luma events:\n${availableEvents.map(e => `- ${e.name} (ID: ${e.api_id}, Starts: ${e.start_at || 'N/A'})`).join('\n')}`
       : "There is no specific event context available right now.";
+    console.log("Built eventContextString:", eventContextString);
 
     // 4. Create the NEW simplified prompt
-    const simplifiedPrompt = `You are a helpful assistant managing Luma events.
-
-${eventContextString}
-
-Please answer the following user request naturally based on the provided context. If the context doesn't contain the answer, say you don't have that information.
-
-User Request: "${text}"
-
-Answer:`;
+    const simplifiedPrompt = `You are a helpful assistant managing Luma events.\n\n${eventContextString}\n\nPlease answer the following user request naturally based on the provided context. If the context doesn't contain the answer, say you don't have that information.\n\nUser Request: \"${text}\"\n\nAnswer:`;
+    console.log("Full prompt being sent to Gemini:", simplifiedPrompt);
 
     // 5. Generate content (requesting TEXT response)
     console.log(`Using model ${modelId}. Calling genAI.models.generateContent for natural language response...`);
