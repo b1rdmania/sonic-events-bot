@@ -14,23 +14,38 @@ async function initializeGenAI() {
         console.log('Dynamically imported genaiModule.default structure:', genaiModule.default);
         console.log('Keys in genaiModule.default:', genaiModule.default ? Object.keys(genaiModule.default) : 'default is undefined');
 
-        const GenAIConstructor = genaiModule.default?.GoogleGenerativeAI;
-        console.log('Dynamic import successful. Type of GenAIConstructor (from default export):', typeof GenAIConstructor);
+        // ---> ATTEMPT TO FIND CONSTRUCTOR VIA KEY ITERATION <---
+        let GenAIConstructor = null;
+        if (genaiModule.default && typeof genaiModule.default === 'object') {
+            for (const key in genaiModule.default) {
+                if (key === 'GoogleGenerativeAI') {
+                    GenAIConstructor = genaiModule.default[key];
+                    console.log(`Found key '${key}', assigned to GenAIConstructor.`);
+                    break; // Found it, stop looping
+                }
+            }
+        } else {
+            console.log('genaiModule.default is not an object, cannot iterate keys.');
+        }
+        // ---> END KEY ITERATION <---
+
+        // const GenAIConstructor = genaiModule.default?.GoogleGenerativeAI; // Old direct access
+        console.log('Dynamic import successful. Type of GenAIConstructor (found via iteration):', typeof GenAIConstructor);
 
         if (!GenAIConstructor) {
-            console.error('GoogleGenerativeAI constructor not found in genaiModule.default:', genaiModule.default);
-            throw new Error('GoogleGenerativeAI constructor not found in dynamically imported module\'s default export.');
+            console.error('GoogleGenerativeAI constructor not found in genaiModule.default after key iteration:', genaiModule.default);
+            throw new Error('GoogleGenerativeAI constructor not found in dynamically imported module\'s default export (iteration check).');
         }
         if (typeof GenAIConstructor !== 'function') {
-           console.error('GoogleGenerativeAI (from default) is not a function/constructor. Type:', typeof GenAIConstructor);
-           throw new Error('GoogleGenerativeAI (from default) is not a function/constructor.');
+           console.error('GoogleGenerativeAI (found via iteration) is not a function/constructor. Type:', typeof GenAIConstructor);
+           throw new Error('GoogleGenerativeAI (found via iteration) is not a function/constructor.');
         }
 
         if (!config.gemini.apiKey) {
           throw new Error('Missing required environment variable: GEMINI_API_KEY during dynamic init');
         }
 
-        console.log('Instantiating GoogleGenerativeAI dynamically from default export...');
+        console.log('Instantiating GoogleGenerativeAI dynamically from iterated key...');
         return new GenAIConstructor(config.gemini.apiKey);
     }).catch(err => {
         console.error("Failed to dynamically import or initialize @google/genai:", err);
