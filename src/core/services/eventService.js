@@ -20,26 +20,31 @@ async function listOrgEvents(encryptedApiKey, options = {}) {
   }
 
   if (!result || !result.entries || result.entries.length === 0) {
-    return 'No upcoming events found for the linked Luma account\.'; // Escaped period
+    // Return plain text, escape at the end
+    return escapeMarkdownV2('No upcoming events found for the linked Luma account.');
   }
 
-  let reply = `Found ${result.entries.length} event\(s\):\n\n`;
+  // Build reply with raw text first
+  let rawReply = `Found ${result.entries.length} event(s):\n\n`;
   result.entries.forEach((event, index) => {
     const startTime = event.start_at ? new Date(event.start_at).toLocaleString() : 'N/A';
-    const eventName = escapeMarkdownV2(event.name || 'Unnamed Event');
-    const eventId = escapeMarkdownV2(event.api_id);
-    const escapedStartTime = escapeMarkdownV2(startTime);
+    const eventName = event.name || 'Unnamed Event';
+    const eventId = event.api_id;
+    // const escapedStartTime = escapeMarkdownV2(startTime); // Remove escaping here
 
-    reply += `${index + 1}\\. *${eventName}* \(ID: \`${eventId}\`\)\n`;
-    reply += `   Starts: ${escapedStartTime}\n`;
+    // Use raw values, format with markdown characters
+    rawReply += `${index + 1}. *${eventName}* (ID: \`${eventId}\`)\n`; // Raw dot, parens, backticks, star
+    rawReply += `   Starts: ${startTime}\n`;
   });
 
   if (result.has_more) {
     const noteContent = "More events available - pagination not yet implemented";
-    reply += `\n_${escapeMarkdownV2(noteContent)}_`;
+    // Add raw note with italics marker
+    rawReply += `\n_${noteContent}_`;
   }
 
-  return reply;
+  // Escape the entire built string at the end
+  return escapeMarkdownV2(rawReply);
 }
 
 module.exports = {

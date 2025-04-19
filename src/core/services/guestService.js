@@ -15,31 +15,38 @@ async function getEventGuests(encryptedApiKey, eventApiId, options = {}) {
   console.log(`Luma API Result (getGuests for ${eventApiId}):`, JSON.stringify(result, null, 2)); // Log Luma Result
 
   const statusFilter = options.approval_status;
-  const escapedEventId = escapeMarkdownV2(eventApiId);
-  const escapedStatusFilter = escapeMarkdownV2(statusFilter);
 
   if (!result || !result.entries || result.entries.length === 0) {
-    return `No guests found for event \`${escapedEventId}\`` + (statusFilter ? ` with status \"${escapedStatusFilter}\"` : '\.');
+    let rawMsg = `No guests found for event \`${eventApiId}\``;
+    if (statusFilter) {
+      rawMsg += ` with status \"${statusFilter}\"`;
+    }
+    rawMsg += '.';
+    return escapeMarkdownV2(rawMsg);
   }
 
-  let reply = `Found ${result.entries.length} guests for event \`${escapedEventId}\``;
+  // Build raw string
+  let rawReply = `Found ${result.entries.length} guests for event \`${eventApiId}\``;
   if (statusFilter) {
-      reply += ` with status \"${escapedStatusFilter}\"`
+      rawReply += ` with status \"${statusFilter}\"`;
   }
-  reply += ':\n';
+  rawReply += ':\n';
 
   result.entries.forEach((guest, index) => {
-    const guestName = escapeMarkdownV2(guest.name || 'N/A');
-    const guestEmail = escapeMarkdownV2(guest.email || 'N/A');
-    const guestStatus = escapeMarkdownV2(guest.approval_status || 'N/A');
-    reply += `${index + 1}\\. ${guestName} \(${guestEmail}\) \- Status: ${guestStatus}\n`;
+    const guestName = guest.name || 'N/A';
+    const guestEmail = guest.email || 'N/A';
+    const guestStatus = guest.approval_status || 'N/A';
+    // Use raw values, add markdown formatting
+    rawReply += `${index + 1}. ${guestName} (${guestEmail}) - Status: ${guestStatus}\n`;
   });
 
   if (result.has_more) {
-      reply += `\n_\(More guests available \- pagination not yet implemented\)_`;
+      const noteContent = "More guests available - pagination not yet implemented";
+      rawReply += `\n_${noteContent}_`;
   }
 
-  return reply;
+  // Escape the entire string at the end
+  return escapeMarkdownV2(rawReply);
 }
 
 /**
@@ -54,17 +61,21 @@ async function getEventGuestCount(encryptedApiKey, eventApiId, options = {}) {
   const result = await lumaClient.getGuests(encryptedApiKey, eventApiId, options);
   console.log(`Luma API Result (getGuests for count for ${eventApiId}):`, JSON.stringify(result, null, 2)); // Log Luma Result
 
-  const escapedEventId = escapeMarkdownV2(eventApiId);
-
   if (!result || !result.entries) {
-    return `Could not retrieve guest information for event \`${escapedEventId}\`\.`;
+    const rawMsg = `Could not retrieve guest information for event \`${eventApiId}\`.`;
+    return escapeMarkdownV2(rawMsg);
   }
 
   const guests = result.entries;
   const totalGuests = guests.length;
 
   if (totalGuests === 0) {
-    return `No guests found for event \`${escapedEventId}\`` + (options.approval_status ? ` with status \"${escapeMarkdownV2(options.approval_status)}\"` : '\.');
+    let rawMsg = `No guests found for event \`${eventApiId}\``;
+    if (options.approval_status) {
+        rawMsg += ` with status \"${options.approval_status}\"`;
+    }
+    rawMsg += '.';
+    return escapeMarkdownV2(rawMsg);
   }
 
   const statusCounts = guests.reduce((counts, guest) => {
@@ -73,17 +84,20 @@ async function getEventGuestCount(encryptedApiKey, eventApiId, options = {}) {
     return counts;
   }, {});
 
-  let reply = `*Guest Summary for event \`${escapedEventId}\`*:\nTotal Guests: ${totalGuests}\n`;
+  // Build raw string
+  let rawReply = `*Guest Summary for event \`${eventApiId}\`*:\nTotal Guests: ${totalGuests}\n`;
   for (const [status, count] of Object.entries(statusCounts)) {
-    reply += `- ${escapeMarkdownV2(status)}: ${count}\n`;
+    // Use raw status string
+    rawReply += `- ${status}: ${count}\n`;
   }
 
   if (result.has_more) {
     const noteContent = "Note: Counts based on the first batch of guests retrieved. More guests exist.";
-    reply += `\n_${escapeMarkdownV2(noteContent)}_`;
+    rawReply += `\n_${noteContent}_`;
   }
 
-  return reply;
+  // Escape the entire string at the end
+  return escapeMarkdownV2(rawReply);
 }
 
 /**
@@ -111,7 +125,8 @@ async function approveGuest(encryptedApiKey, eventApiId, guestEmail, auditContex
       }
     });
 
-    return `Successfully approved \`${escapeMarkdownV2(guestEmail)}\` for event \`${escapeMarkdownV2(eventApiId)}\`\.`;
+    const rawMsg = `Successfully approved \`${guestEmail}\` for event \`${eventApiId}\`.`;
+    return escapeMarkdownV2(rawMsg);
 
   } catch (error) {
     console.error(`Error in approveGuest service for event ${eventApiId}, guest ${guestEmail}:`, error);
@@ -130,7 +145,9 @@ async function approveGuest(encryptedApiKey, eventApiId, guestEmail, auditContex
       console.error("Failed to create failure audit log for approveGuest service:", logError);
     }
     // Re-throw the original error to be handled by the caller
-    throw new Error(`Failed to approve guest \`${escapeMarkdownV2(guestEmail)}\`\. Error: ${escapeMarkdownV2(error.message)}`);
+    // Escape the error message being thrown as well
+    const rawErrorMsg = `Failed to approve guest \`${guestEmail}\`. Error: ${error.message}`;
+    throw new Error(escapeMarkdownV2(rawErrorMsg));
   }
 }
 
@@ -160,7 +177,8 @@ async function rejectGuest(encryptedApiKey, eventApiId, guestEmail, auditContext
       }
     });
 
-    return `Successfully rejected \`${escapeMarkdownV2(guestEmail)}\` for event \`${escapeMarkdownV2(eventApiId)}\`\.`;
+    const rawMsg = `Successfully rejected \`${guestEmail}\` for event \`${eventApiId}\`.`;
+    return escapeMarkdownV2(rawMsg);
 
   } catch (error) {
     console.error(`Error in rejectGuest service for event ${eventApiId}, guest ${guestEmail}:`, error);
@@ -179,7 +197,9 @@ async function rejectGuest(encryptedApiKey, eventApiId, guestEmail, auditContext
       console.error("Failed to create failure audit log for rejectGuest service:", logError);
     }
     // Re-throw the original error to be handled by the caller
-    throw new Error(`Failed to reject guest \`${escapeMarkdownV2(guestEmail)}\`\. Error: ${escapeMarkdownV2(error.message)}`);
+    // Escape the error message being thrown as well
+    const rawErrorMsg = `Failed to reject guest \`${guestEmail}\`. Error: ${error.message}`;
+    throw new Error(escapeMarkdownV2(rawErrorMsg));
   }
 }
 
