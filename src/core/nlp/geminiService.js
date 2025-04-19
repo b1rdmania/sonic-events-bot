@@ -119,10 +119,19 @@ JSON Response:
     const response = result.response;
     const responseText = response.text();
 
-    // Clean the response text - Gemini might include markdown ```json ... ```
-    const cleanedText = responseText.replace(/^```json\s*|\s*```$/g, '').trim();
+    // Clean the response text - Gemini might include markdown ```json ... ``` or stray characters
+    // Try to extract the main JSON object
+    const jsonMatch = responseText.match(/\\{.*\\}/s); // Find text between the first { and last }
+    let cleanedText = '';
+    if (jsonMatch && jsonMatch[0]) {
+      cleanedText = jsonMatch[0];
+    } else {
+      // Fallback if no clear JSON object is found (e.g., model refused)
+      cleanedText = responseText.replace(/^```json\\s*|\\s*```$/g, '').trim();
+    }
 
-    console.log("Raw Gemini Response Text:", cleanedText);
+    console.log("Raw Gemini Response Text (pre-cleaning):", responseText);
+    console.log("Cleaned Text for JSON Parsing:", cleanedText);
 
     // Attempt to parse the JSON response
     let parsedResponse;
