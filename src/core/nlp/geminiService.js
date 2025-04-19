@@ -1,4 +1,4 @@
-const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/genai');
+const { GoogleGenAI, HarmCategory, HarmBlockThreshold } = require('@google/genai');
 const config = require('../../config');
 const { escapeMarkdownV2 } = require('../services/escapeUtil');
 
@@ -7,7 +7,7 @@ if (!config.gemini.apiKey) {
 }
 
 // Initialize the Generative AI client using the new SDK pattern
-const genAI = new GoogleGenerativeAI(config.gemini.apiKey);
+const genAI = new GoogleGenAI({ apiKey: config.gemini.apiKey });
 
 // Define safety settings (structure might be the same, constants imported from new package)
 const safetySettings = [
