@@ -1,11 +1,12 @@
 const lumaClient = require('../luma/client');
-const { escapeMarkdownV2 } = require('./escapeUtil');
+// Remove unused escapeMarkdownV2 import if no longer needed elsewhere in file
+// const { escapeMarkdownV2 } = require('./escapeUtil');
 
 /**
- * Fetches and formats a list of events for an organization using MarkdownV2.
+ * Fetches a list of events for an organization.
  * @param {string} encryptedApiKey - The encrypted Luma API key.
  * @param {object} [options] - Optional filtering/pagination options for the API call.
- * @returns {Promise<string>} - A formatted string listing the events or a message indicating none were found.
+ * @returns {Promise<object>} - An object containing the list of event entries and pagination info { entries: [], has_more: boolean } or null if no events found.
  * @throws {Error} - If the API call fails.
  */
 async function listOrgEvents(encryptedApiKey, options = {}) {
@@ -13,38 +14,42 @@ async function listOrgEvents(encryptedApiKey, options = {}) {
   let result;
   try {
     result = await lumaClient.listEvents(encryptedApiKey, options);
-    console.log(`Luma API Result (listEvents):`, JSON.stringify(result, null, 2)); // Log Luma Result
+    // Log only essential parts for brevity unless debugging deeper
+    console.log(`Luma API Result (listEvents): Found ${result?.entries?.length || 0} events. Has More: ${result?.has_more}`);
   } catch (lumaError) {
     console.error("Error calling lumaClient.listEvents:", lumaError);
-    throw new Error(`Failed to fetch events from Luma API: ${lumaError.message}`); // Re-throw specific error
+    // Throw the original error or a custom one
+    throw new Error(`Failed to fetch events from Luma API: ${lumaError.message}`);
   }
 
   if (!result || !result.entries || result.entries.length === 0) {
-    // Return plain text, escape at the end
-    return escapeMarkdownV2('No upcoming events found for the linked Luma account.');
+    return null; // Return null instead of a formatted string
   }
 
-  // Build reply with raw text first
-  let rawReply = `Found ${result.entries.length} event(s):\n\n`;
+  // Return the relevant data, not a formatted string
+  return {
+      entries: result.entries, // Return the raw entries
+      has_more: result.has_more
+  };
+
+  // --- Removed formatting logic ---
+  /*
+  let rawReply = `Found ${result.entries.length} event(s):\\n\\n`;
   result.entries.forEach((event, index) => {
     const startTime = event.start_at ? new Date(event.start_at).toLocaleString() : 'N/A';
     const eventName = event.name || 'Unnamed Event';
     const eventId = event.api_id;
-    // const escapedStartTime = escapeMarkdownV2(startTime); // Remove escaping here
 
-    // Use raw values, format with markdown characters
-    rawReply += `${index + 1}. *${eventName}* (ID: \`${eventId}\`)\n`; // Raw dot, parens, backticks, star
-    rawReply += `   Starts: ${startTime}\n`;
+    rawReply += `${index + 1}. *${eventName}* (ID: \`${eventId}\`)\\n`;
+    rawReply += `   Starts: ${startTime}\\n`;
   });
 
   if (result.has_more) {
     const noteContent = "More events available - pagination not yet implemented";
-    // Add raw note with italics marker
-    rawReply += `\n_${noteContent}_`;
+    rawReply += `\\n_${noteContent}_`;
   }
-
-  // Escape the entire built string at the end
   return escapeMarkdownV2(rawReply);
+  */
 }
 
 module.exports = {

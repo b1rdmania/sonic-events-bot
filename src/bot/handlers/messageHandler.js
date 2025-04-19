@@ -1,17 +1,10 @@
-const geminiService = require('../../core/nlp/geminiService');
+const { processNaturalLanguageQuery, formatDataWithGemini } = require('../../core/nlp/geminiService');
 const lumaClient = require('../../core/luma/client');
 const { requireLink } = require('../middleware/auth');
 const prisma = require('../../core/db/prisma');
 const eventService = require('../../core/services/eventService');
 const guestService = require('../../core/services/guestService');
 const { escapeMarkdownV2 } = require('../../core/services/escapeUtil');
-
-// Import command handlers to potentially reuse their logic
-// Note: This might require refactoring commands into reusable service functions later
-const { eventsCommandHandler } = require('../commands/events');
-const { guestsCommandHandler } = require('../commands/guests');
-const { approveCommandHandler } = require('../commands/approve');
-const { rejectCommandHandler } = require('../commands/reject');
 
 /**
  * Middleware to check if the bot should respond to a message.
@@ -95,28 +88,30 @@ const messageHandler = async (ctx) => {
     // 1. Fetch context (e.g., upcoming events)
     let eventContext = [];
     try {
-      const eventsResult = await lumaClient.listEvents(encryptedApiKey, { /* Add date filters? */ });
+      // Fetch minimal data needed for context
+      const eventsResult = await lumaClient.listEvents(encryptedApiKey, { /* Consider limiting fields if possible */ });
       if (eventsResult?.entries) {
         eventContext = eventsResult.entries.map(e => ({ api_id: e.api_id, name: e.name }));
       }
     } catch (eventError) {
       console.error("Failed to fetch event context for NLP:", eventError);
-      // Proceed without event context, Gemini might struggle more
     }
 
-    // 2. Call Gemini Service
-    const nlpResult = await geminiService.processNaturalLanguageQuery(userText, { events: eventContext });
+    // 2. Call Gemini Service for Intent/Entity Extraction
+    const nlpResult = await processNaturalLanguageQuery(userText, { events: eventContext });
 
     console.log("NLP Result:", JSON.stringify(nlpResult, null, 2));
 
     // 3. Process NLP Result (Errors and Clarifications first)
     if (nlpResult.error) {
+      // Still escape the error message from NLP service
       return ctx.replyWithMarkdownV2(escapeMarkdownV2(`Error processing your request: ${nlpResult.error}`));
     }
     if (nlpResult.intent === 'BLOCKED') {
         return ctx.replyWithMarkdownV2(escapeMarkdownV2('Sorry, your request could not be processed due to safety restrictions.'));
     }
     if (nlpResult.requires_clarification && nlpResult.clarification_message) {
+      // Send clarification message from NLP (already formatted)
       return ctx.replyWithMarkdownV2(escapeMarkdownV2(nlpResult.clarification_message));
     }
 
@@ -130,41 +125,55 @@ const messageHandler = async (ctx) => {
             resolvedEventId = resolution.eventId;
             console.log(`Resolved event ID: ${resolvedEventId} from name "${nlpResult.entities?.event_name}"`);
         } else if (resolution.error === 'ambiguous') {
-            let clarification = `Which event did you mean?
-`;
-            resolution.matches.forEach(m => clarification += `\- ${escapeMarkdownV2(m.name)} \(ID: \`${escapeMarkdownV2(m.api_id)}\`\)
-`);
+            let clarification = `Which event did you mean?\n`;
+            // Escape parts of the clarification message
+            resolution.matches.forEach(m => clarification += `\- ${escapeMarkdownV2(m.name || 'Unnamed')} \(ID: \`${escapeMarkdownV2(m.api_id)}\`\)\n`);
             return ctx.replyWithMarkdownV2(clarification);
         } else if (resolution.error === 'missing') {
             return ctx.replyWithMarkdownV2(escapeMarkdownV2('Please specify which event you are referring to (e.g., by name or ID).'));
         } else {
+            // Escape the error string from resolveEventId
             return ctx.replyWithMarkdownV2(escapeMarkdownV2(resolution.error || 'Could not determine the event. Please specify the event ID.'));
         }
     }
 
     // --- Intent Routing --- 
+    await ctx.replyWithChatAction('typing'); // Show typing before service call
+
     switch (nlpResult.intent) {
       case 'LIST_EVENTS':
         try {
-          await ctx.replyWithChatAction('typing');
-          const options = {}; 
-          const replyMessage = await eventService.listOrgEvents(encryptedApiKey, options);
-          return ctx.replyWithMarkdownV2(replyMessage); // Already formatted by service
+          const eventData = await eventService.listOrgEvents(encryptedApiKey, {});
+          if (!eventData || eventData.entries.length === 0) {
+              return ctx.replyWithMarkdownV2(escapeMarkdownV2('No upcoming events found.'));
+          }
+          const instruction = "Present this list of Luma events clearly to the user. Include the event name, ID, and start time for each. Indicate if there are more events not shown.";
+          const geminiFormattedResponse = await formatDataWithGemini(eventData, instruction);
+          return ctx.replyWithMarkdownV2(escapeMarkdownV2(geminiFormattedResponse)); // Escape Gemini's output
         } catch (error) {
           console.error('Error handling LIST_EVENTS intent:', error);
+          // Escape the error message before sending
           return ctx.replyWithMarkdownV2(escapeMarkdownV2(`Failed to list events. Error: ${error.message}`));
         }
 
       case 'GET_GUESTS':
         if (!resolvedEventId) return ctx.replyWithMarkdownV2(escapeMarkdownV2('Please specify the event ID for getting guests.'));
         try {
-          await ctx.replyWithChatAction('typing');
           const options = {};
           if (nlpResult.entities?.status_filter) {
             options.approval_status = nlpResult.entities.status_filter;
           }
-          const replyMessage = await guestService.getEventGuests(encryptedApiKey, resolvedEventId, options);
-          return ctx.replyWithMarkdownV2(replyMessage); // Already formatted by service
+          const guestData = await guestService.getEventGuests(encryptedApiKey, resolvedEventId, options);
+          if (!guestData || guestData.entries.length === 0) {
+              let noneFoundMsg = `No guests found for event ${resolvedEventId}`;
+              if (guestData?.statusFilter) noneFoundMsg += ` with status \"${guestData.statusFilter}\"`;
+              noneFoundMsg += '.';
+              return ctx.replyWithMarkdownV2(escapeMarkdownV2(noneFoundMsg));
+          }
+          const instruction = `Present this list of guests for event ${resolvedEventId}. Include name, email, and approval status. Note if the list is incomplete (has_more).`;
+          if (guestData.statusFilter) instruction += ` (Filtered by status: ${guestData.statusFilter})`;
+          const geminiFormattedResponse = await formatDataWithGemini(guestData, instruction);
+          return ctx.replyWithMarkdownV2(escapeMarkdownV2(geminiFormattedResponse)); // Escape Gemini's output
         } catch (error) {
           console.error(`Error handling GET_GUESTS intent for event ${resolvedEventId}:`, error);
           return ctx.replyWithMarkdownV2(escapeMarkdownV2(`Failed to get guests. Error: ${error.message}`));
@@ -173,13 +182,21 @@ const messageHandler = async (ctx) => {
       case 'GET_GUEST_COUNT':
         if (!resolvedEventId) return ctx.replyWithMarkdownV2(escapeMarkdownV2('Please specify the event ID for getting guest counts.'));
         try {
-          await ctx.replyWithChatAction('typing');
           const options = {};
           if (nlpResult.entities?.status_filter) {
             options.approval_status = nlpResult.entities.status_filter;
           }
-          const replyMessage = await guestService.getEventGuestCount(encryptedApiKey, resolvedEventId, options);
-          return ctx.replyWithMarkdownV2(replyMessage); // Already formatted by service
+          const guestCountData = await guestService.getEventGuestCount(encryptedApiKey, resolvedEventId, options);
+           if (!guestCountData) {
+              let noneFoundMsg = `No guests found for event ${resolvedEventId}`;
+              if (options.approval_status) noneFoundMsg += ` with status \"${options.approval_status}\"`;
+              noneFoundMsg += '.';
+              return ctx.replyWithMarkdownV2(escapeMarkdownV2(noneFoundMsg));
+          }
+          const instruction = `Present this guest count summary for event ${resolvedEventId}. Show the total and breakdown by status. Note if counts are based on partial data (has_more).`;
+          if (guestCountData.statusFilter) instruction += ` (Filtered by status: ${guestCountData.statusFilter})`;
+          const geminiFormattedResponse = await formatDataWithGemini(guestCountData, instruction);
+          return ctx.replyWithMarkdownV2(escapeMarkdownV2(geminiFormattedResponse)); // Escape Gemini's output
         } catch (error) {
           console.error(`Error handling GET_GUEST_COUNT intent for event ${resolvedEventId}:`, error);
           return ctx.replyWithMarkdownV2(escapeMarkdownV2(`Failed to get guest counts. Error: ${error.message}`));
@@ -191,13 +208,14 @@ const messageHandler = async (ctx) => {
         if (!guestEmailToApprove) return ctx.replyWithMarkdownV2(escapeMarkdownV2('Please specify the guest email to approve.'));
 
         try {
-          await ctx.replyWithChatAction('typing');
           const auditContext = { orgId: org.id, userId, groupId: chatType !== 'private' ? chatId : null };
           const successMessage = await guestService.approveGuest(encryptedApiKey, resolvedEventId, guestEmailToApprove, auditContext);
-          return ctx.replyWithMarkdownV2(successMessage); // Already formatted by service
+          // Send simple success message, escaping it
+          return ctx.replyWithMarkdownV2(escapeMarkdownV2(successMessage));
         } catch (error) {
           console.error(`Error handling APPROVE_GUEST intent for event ${resolvedEventId}, guest ${guestEmailToApprove}:`, error);
-          return ctx.replyWithMarkdownV2(error.message); // Already formatted & escaped by service
+          // Error message from service should already be simple text, escape it
+          return ctx.replyWithMarkdownV2(escapeMarkdownV2(error.message));
         }
 
       case 'REJECT_GUEST':
@@ -206,22 +224,25 @@ const messageHandler = async (ctx) => {
         if (!guestEmailToReject) return ctx.replyWithMarkdownV2(escapeMarkdownV2('Please specify the guest email to reject.'));
 
         try {
-          await ctx.replyWithChatAction('typing');
           const auditContext = { orgId: org.id, userId, groupId: chatType !== 'private' ? chatId : null };
           const successMessage = await guestService.rejectGuest(encryptedApiKey, resolvedEventId, guestEmailToReject, auditContext);
-          return ctx.replyWithMarkdownV2(successMessage); // Already formatted by service
+          // Send simple success message, escaping it
+          return ctx.replyWithMarkdownV2(escapeMarkdownV2(successMessage));
         } catch (error) {
           console.error(`Error handling REJECT_GUEST intent for event ${resolvedEventId}, guest ${guestEmailToReject}:`, error);
-          return ctx.replyWithMarkdownV2(error.message); // Already formatted & escaped by service
+          // Error message from service should already be simple text, escape it
+          return ctx.replyWithMarkdownV2(escapeMarkdownV2(error.message));
         }
 
       case 'UNKNOWN':
       default:
+        // Send clarification message from NLP or a default message
         return ctx.replyWithMarkdownV2(escapeMarkdownV2(nlpResult.clarification_message || "Sorry, I didn't understand that. Can you please rephrase?"));
     }
 
   } catch (error) {
     console.error("Error in message handler:", error);
+    // Generic fallback error, escape it
     await ctx.replyWithMarkdownV2(escapeMarkdownV2('Sorry, an internal error occurred while processing your message.'));
   }
 };

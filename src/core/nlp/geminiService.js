@@ -183,6 +183,79 @@ JSON Response:
   }
 }
 
+/**
+ * Takes raw data and instructions, asks Gemini to format it for the user.
+ * @param {object|array} data - The raw data to be formatted (e.g., list of events, guests).
+ * @param {string} instruction - Instruction for Gemini on how to format/present the data.
+ * @returns {Promise<string>} - Gemini's formatted text response.
+ * @throws {Error} - If the API call fails or returns an unexpected response.
+ */
+async function formatDataWithGemini(data, instruction) {
+  const dataString = JSON.stringify(data, null, 2); // Pretty print JSON for the prompt
+  // Basic check for excessively large data to avoid huge prompts
+  if (dataString.length > 15000) { // Limit prompt data size (adjust as needed)
+      console.warn('Data provided to formatDataWithGemini is very large, potentially exceeding limits.');
+      // Consider summarizing or truncating data here if necessary
+  }
+
+  const prompt = `
+${instruction}
+
+Data:
+\`\`\`json
+${dataString}
+\`\`\`
+
+Please format the data clearly for the user. Respond only with the formatted text suitable for display in a chat message. Avoid conversational introductions or explanations unless specifically asked for in the instruction.
+`;
+
+  console.log(`Calling Gemini for data formatting. Instruction: "${instruction}"`);
+
+  try {
+    // Add a small delay
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Call generateContent directly on the models collection
+    const result = await genAI.models.generateContent({
+        model: modelName, // Use the same model for now
+        // Use a simple text prompt structure for formatting
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        safetySettings: safetySettings,
+        // Optional: Adjust generationConfig for formatting tasks if needed
+        // generationConfig: { temperature: 0.2 } // Example: Lower temp for more deterministic formatting
+    });
+
+    console.log("Raw Gemini API Result (Formatting):", JSON.stringify(result, null, 2));
+
+    // Access candidates directly from the result object
+    const candidates = result.candidates;
+
+    if (!candidates || candidates.length === 0 || !candidates[0].content || !candidates[0].content.parts || candidates[0].content.parts.length === 0 || !candidates[0].content.parts[0].text) {
+      console.error('No valid text part found in Gemini formatting response candidates:', JSON.stringify(result, null, 2));
+      const promptFeedback = result.promptFeedback;
+      if (promptFeedback?.blockReason) {
+        console.error("Formatting prompt blocked:", promptFeedback.blockReason);
+        throw new Error(`AI formatting request blocked due to safety settings: ${promptFeedback.blockReason}`);
+      }
+      if (candidates && candidates.length > 0 && candidates[0].finishReason && candidates[0].finishReason !== 'STOP') {
+        console.error("Formatting candidate finished with reason:", candidates[0].finishReason);
+        throw new Error(`AI response generation stopped unexpectedly during formatting (${candidates[0].finishReason}).`);
+      }
+      throw new Error('Received an empty or invalid response structure from AI model during formatting.');
+    }
+
+    const formattedText = candidates[0].content.parts[0].text;
+    console.log("Gemini Formatted Text:", formattedText);
+    return formattedText;
+
+  } catch (error) {
+    console.error("Error calling Gemini API for data formatting:", error);
+    // Rethrow a more specific error or handle it as needed
+    throw new Error(`Failed to get formatted response from AI model: ${error.message}`);
+  }
+}
+
 module.exports = {
   processNaturalLanguageQuery,
+  formatDataWithGemini
 }; 
