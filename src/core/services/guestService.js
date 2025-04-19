@@ -71,11 +71,12 @@ async function getEventGuestCount(encryptedApiKey, eventApiId, options = {}) {
 
   let reply = `*Guest Summary for event \`${escapedEventId}\`*:\nTotal Guests: ${totalGuests}\n`;
   for (const [status, count] of Object.entries(statusCounts)) {
-    reply += `\- ${escapeMarkdownV2(status)}: ${count}\n`;
+    reply += `- ${escapeMarkdownV2(status)}: ${count}\n`;
   }
 
   if (result.has_more) {
-    reply += `\n_\(Note: Counts based on the first batch of guests retrieved\. More guests exist\.\)_`;
+    const noteContent = "Note: Counts based on the first batch of guests retrieved. More guests exist.";
+    reply += `\n_${escapeMarkdownV2(noteContent)}_`;
   }
 
   return reply;
