@@ -1,6 +1,6 @@
 const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/genai');
 const config = require('../../config');
-const { escapeMarkdownV2 } = require('./escapeUtil');
+const { escapeMarkdownV2 } = require('../services/escapeUtil');
 
 if (!config.gemini.apiKey) {
   throw new Error('Missing required environment variable: GEMINI_API_KEY');
