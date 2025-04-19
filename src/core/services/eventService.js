@@ -9,8 +9,15 @@ const { escapeMarkdownV2 } = require('./escapeUtil');
  * @throws {Error} - If the API call fails.
  */
 async function listOrgEvents(encryptedApiKey, options = {}) {
-  const result = await lumaClient.listEvents(encryptedApiKey, options);
-  console.log(`Luma API Result (listEvents):`, JSON.stringify(result, null, 2)); // Log Luma Result
+  console.log("Attempting to list events via Luma API..."); // Log entry
+  let result;
+  try {
+    result = await lumaClient.listEvents(encryptedApiKey, options);
+    console.log(`Luma API Result (listEvents):`, JSON.stringify(result, null, 2)); // Log Luma Result
+  } catch (lumaError) {
+    console.error("Error calling lumaClient.listEvents:", lumaError);
+    throw new Error(`Failed to fetch events from Luma API: ${lumaError.message}`); // Re-throw specific error
+  }
 
   if (!result || !result.entries || result.entries.length === 0) {
     return 'No upcoming events found for the linked Luma account\.'; // Escaped period
