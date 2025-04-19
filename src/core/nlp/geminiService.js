@@ -129,7 +129,7 @@ JSON Response:
     } catch (initialParseError) {
       console.warn("Initial JSON.parse failed, attempting extraction:", initialParseError.message);
       // If initial parse fails, try extracting content between {}
-      const jsonMatch = cleanedText.match(/\\{.*\\}/s); // Find text between the first { and last }
+      const jsonMatch = cleanedText.match(/{.*}/s); // Find text between the first { and last }
       if (jsonMatch && jsonMatch[0]) {
         cleanedText = jsonMatch[0];
         console.log("Extracted JSON-like content:", cleanedText);
