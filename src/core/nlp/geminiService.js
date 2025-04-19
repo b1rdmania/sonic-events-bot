@@ -11,23 +11,27 @@ async function initializeGenAI() {
     console.log('Dynamically importing @google/genai...');
     genAIInstancePromise = import('@google/genai').then(genaiModule => {
         console.log('Dynamically imported genaiModule structure:', genaiModule);
-        console.log('Dynamic import successful. Type of GoogleGenerativeAI:', typeof genaiModule.GoogleGenerativeAI);
-        if (!genaiModule.GoogleGenerativeAI) {
-            console.error('GoogleGenerativeAI not found in dynamically imported module:', genaiModule);
-            throw new Error('GoogleGenerativeAI not found in dynamically imported module.');
+        console.log('Dynamically imported genaiModule.default structure:', genaiModule.default);
+        console.log('Keys in genaiModule.default:', genaiModule.default ? Object.keys(genaiModule.default) : 'default is undefined');
+
+        const GenAIConstructor = genaiModule.default?.GoogleGenerativeAI;
+        console.log('Dynamic import successful. Type of GenAIConstructor (from default export):', typeof GenAIConstructor);
+
+        if (!GenAIConstructor) {
+            console.error('GoogleGenerativeAI constructor not found in genaiModule.default:', genaiModule.default);
+            throw new Error('GoogleGenerativeAI constructor not found in dynamically imported module\'s default export.');
         }
-        if (typeof genaiModule.GoogleGenerativeAI !== 'function') {
-           console.error('GoogleGenerativeAI is not a function/constructor after dynamic import. Type:', typeof genaiModule.GoogleGenerativeAI);
-            throw new Error('GoogleGenerativeAI is not a function/constructor after dynamic import.');
+        if (typeof GenAIConstructor !== 'function') {
+           console.error('GoogleGenerativeAI (from default) is not a function/constructor. Type:', typeof GenAIConstructor);
+           throw new Error('GoogleGenerativeAI (from default) is not a function/constructor.');
         }
 
         if (!config.gemini.apiKey) {
           throw new Error('Missing required environment variable: GEMINI_API_KEY during dynamic init');
         }
 
-        console.log('Instantiating GoogleGenerativeAI dynamically...');
-        // Store the actual instance in the resolved promise
-        return new genaiModule.GoogleGenerativeAI(config.gemini.apiKey);
+        console.log('Instantiating GoogleGenerativeAI dynamically from default export...');
+        return new GenAIConstructor(config.gemini.apiKey);
     }).catch(err => {
         console.error("Failed to dynamically import or initialize @google/genai:", err);
         genAIInstancePromise = null; // Reset promise on failure
