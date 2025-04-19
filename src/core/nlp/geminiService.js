@@ -73,22 +73,21 @@ const exampleOutput4 = JSON.stringify({ intent: "GET_EVENT_DETAILS", entities: {
 const exampleOutput5 = JSON.stringify({ intent: "REQUIRES_CLARIFICATION", entities: { guest_email: "test@test.com" }, requires_clarification: true, clarification_prompt: "Which Dubai event are you referring to? Please provide the Event ID or a more specific name from the list." });
 
 /**
- * Analyzes user input using Gemini to determine intent and extract entities.
+ * Analyzes user input using Gemini to generate a natural language response based on Luma context.
  * @param {string} text - User's natural language query.
- * @param {object} context - Additional context (e.g., { events: [{api_id: 'xyz', name: 'Event Foo', start_at: '...'}, ...] }).
- * @returns {Promise<object>} - A promise resolving to an object with intent, entities, or error/clarification.
+ * @param {object} context - Additional context (e.g., { events: [...] }).
+ * @returns {Promise<string>} - A promise resolving to the generated natural language response string, or an error message string.
  */
 async function processNaturalLanguageQuery(text, context = {}) {
   try {
     // 1. Get the singleton Gemini instance
     const genAI = await getGeminiInstance();
-    if (!genAI) { // Should not happen if getGeminiInstance throws on failure, but good practice
+    if (!genAI) { 
       throw new Error('Failed to retrieve Gemini AI instance.');
     }
 
     // Initialize safety settings lazily
     if (!safetySettings) {
-        // Import HarmCategory/HarmBlockThreshold only once if needed
         const { HarmCategory, HarmBlockThreshold } = await import('@google/genai');
         safetySettings = [
             { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
@@ -98,139 +97,61 @@ async function processNaturalLanguageQuery(text, context = {}) {
         ];
     }
 
-    // 2. Get the specific model using the instance -- No, call generateContent directly
+    // 2. Get model ID (still needed for the API call)
     const modelId = config.gemini.modelId || "gemini-2.0-flash";
-    // console.log(`Using model: ${modelId}. Getting model via genAI.models.getGenerativeModel...`);
-    // const model = genAI.models.getGenerativeModel({ // This method does not exist on models object
-    //     model: modelId,
-    //     safetySettings: safetySettings,
-    //     generationConfig: { responseMimeType: "application/json" }
-    // });
-    // console.log('Successfully got generative model.');
 
-    // 3. Build the prompt
+    // 3. Build the event context string (Keep this part)
     const availableEvents = context.events || [];
     const eventContextString = availableEvents.length > 0
-      ? `\\n\\nAvailable Events Context (Name, ID, Start Time):\\n${availableEvents.map(e => `- ${e.name} (ID: ${e.api_id}, Starts: ${e.start_at || 'N/A'})`).join('\\n')}`
-      : "\\n\\nNo specific event context available.";
-    const outputFormatSection = `\n\n**Output Format:**
-Return ONLY a JSON object with the following structure:
-{
-  "intent": "...", // One of the possible intents: ${possibleIntents.join(', ')}
-  "entities": {
-    "event_id": "...", // (Optional) RESOLVED Luma Event API ID (e.g., evt-xxxxxxxx)
-    "guest_email": "...", // (Optional) Guest's email address
-    "status_filter": "...", // (Optional) Filter for guests (VALID values: approved, pending_approval, declined, invited)
-    "detail_requested": "..." // (Optional) Specific detail asked about an event (e.g., name, start_time, end_time, location, description, url, cover_url)
-  },
-  "requires_clarification": boolean, // True if more info is needed from the user
-  "clarification_prompt": "..." // (Optional) A question to ask the user if requires_clarification is true
-}`; // End backtick for this section
-    const rulesSection = `\n\n**Intent Determination & Event Resolution Rules:**
+      ? `Here is the list of relevant Luma events:\n${availableEvents.map(e => `- ${e.name} (ID: ${e.api_id}, Starts: ${e.start_at || 'N/A'})`).join('\n')}`
+      : "There is no specific event context available right now.";
 
-1.  **Analyze Request:** Determine the core intent (e.g., GET_GUESTS, GET_EVENT_DETAILS).
-2.  **Identify Event Reference:** Look for an event_id directly in the request OR an event_name OR a relative term like "next event", "latest event", "first event".
-3.  **Resolve Event ID using Context:**
-    *   If an event_id (evt-...) is present in the request, use that.
-    *   If an event_name is mentioned, find the *best match* in the Available Events Context. If one clear match exists, use its api_id.
-    *   If a relative term like "next event" is used, identify the event from the context with the closest upcoming start_at time (relative to now, assume current date is around April 2025). Use its api_id.
-    *   If the name is ambiguous (multiple matches) or no match is found, set intent to REQUIRES_CLARIFICATION and explain in clarification_prompt.
-    *   If the intent requires an event ID but none could be resolved, set intent to REQUIRES_CLARIFICATION.
-    *   **Crucially, the goal is to populate the \`entities.event_id\` field in the JSON output based on your resolution.**
-4.  **Handle Standalone Event ID:** If the user provides *only* an event ID (e.g., "evt-xyz123"), set intent to GET_EVENT_DETAILS and populate \`entities.event_id\`.
-5.  **Status Filter:** For GET_GUESTS/GET_GUEST_COUNT, map terms like 'pending' to 'pending_approval'. Use 'approved' as default if unspecified. Valid values: 'approved', 'pending_approval', 'declined', 'invited'. Clarify if ambiguous.
-6.  **Detail Requested:** For GET_EVENT_DETAILS, extract the specific detail asked for (name, start_time, location, etc.). Map natural language (when->start_time, where->location). If only an ID or general request was made, leave \`detail_requested\` null/empty.`; // End backtick for this section
-    const examplesSection = `\n\n**Examples (using context above if relevant):**
+    // 4. Create the NEW simplified prompt
+    const simplifiedPrompt = `You are a helpful assistant managing Luma events.
 
-*   User: "who is coming to the next event?"
-    *   Output: ${exampleOutput1}
-*   User: "details for the AI Workshop"
-    *   Output: ${exampleOutput2} (Assuming evt-abc is AI Workshop in context)
-*   User: "show pending for evt-pL3FEVQfjNqlBBJ"
-    *   Output: ${exampleOutput3}
-*   User: "evt-12345"
-    *   Output: ${exampleOutput4}
-*   User: "approve test@test.com for the dubai event"
-    *   Output: ${exampleOutput5} (If multiple Dubai events in context)`; // End backtick for this section
-    const finalInstruction = `\n\nAnalyze the user message based on the rules and context. Output only the JSON object.`;
-    const prompt = `You are an AI assistant integrated with Luma (lu.ma) event management via its API.
-Your task is to analyze user messages and determine the user's intent and extract relevant entities for API calls, using the provided context.`;
-    const userRequestSection = `\n\nUser Request: "${text}"`;
-    const contextSection = eventContextString;
-    const fullPrompt = `${prompt}${userRequestSection}${contextSection}${outputFormatSection}${rulesSection}${examplesSection}${finalInstruction}`;
+${eventContextString}
 
-    // 4. Generate content using genAI.models.generateContent directly
-    console.log(`Using model ${modelId}. Calling genAI.models.generateContent...`);
+Please answer the following user request naturally based on the provided context. If the context doesn't contain the answer, say you don't have that information.
+
+User Request: "${text}"
+
+Answer:`;
+
+    // 5. Generate content (requesting TEXT response)
+    console.log(`Using model ${modelId}. Calling genAI.models.generateContent for natural language response...`);
     const result = await genAI.models.generateContent({
         model: modelId,
-        contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
+        contents: [{ role: "user", parts: [{ text: simplifiedPrompt }] }],
         safetySettings: safetySettings,
-        generationConfig: { responseMimeType: "application/json" },
+        // NO generationConfig for responseMimeType: "application/json"
     });
 
-    // 5. Process result
+    // 6. Process the TEXT response
     const candidates = result?.candidates;
-
-    // --- Simpler check using optional chaining --- 
     const responseText = candidates?.[0]?.content?.parts?.[0]?.text;
 
-    // Check if responseText is missing or empty after optional chaining
-    if (!responseText) { 
-        console.error('No valid text part found in Gemini response candidates (checked via optional chaining):', JSON.stringify(result, null, 2));
-        const promptFeedback = result?.promptFeedback; // Check for promptFeedback directly on result
+    if (!responseText) {
+        console.error('No valid text part found in Gemini response (natural language request):', JSON.stringify(result, null, 2));
+        const promptFeedback = result?.promptFeedback;
         if (promptFeedback?.blockReason) {
-            console.error("Prompt blocked:", promptFeedback.blockReason);
-            return { intent: 'BLOCKED', entities: {}, originalText: text, error: `Request blocked due to safety settings: ${promptFeedback.blockReason}` };
+          console.error("Prompt blocked:", promptFeedback.blockReason);
+          return `Sorry, your request was blocked due to safety settings (${promptFeedback.blockReason}).`;
         }
         if (candidates && candidates.length > 0 && candidates[0].finishReason && candidates[0].finishReason !== 'STOP') {
-            console.error("Candidate finished with reason:", candidates[0].finishReason);
-            return { intent: 'UNKNOWN', entities: {}, originalText: text, error: `AI response generation stopped unexpectedly (${candidates[0].finishReason}).`, rawResponse: JSON.stringify(result, null, 2) };
+          console.error("Candidate finished with reason:", candidates[0].finishReason);
+          return `Sorry, the response generation stopped unexpectedly (${candidates[0].finishReason}).`;
         }
         // Generic error if text is still missing
-        return {
-          intent: 'UNKNOWN',
-          entities: {},
-          originalText: text,
-          error: 'Received an empty or invalid text response from AI model.',
-          rawResponse: JSON.stringify(result, null, 2) // Log the actual result object
-        };
+        return "Sorry, I received an empty or invalid response from the AI.";
       }
-      // --- End Simpler Check --- 
       
-      // console.log("Raw Gemini Response Text (pre-cleaning):", responseText);
-  
-      // Attempt to parse the JSON response
-      let parsedResponse;
-      let cleanedText = responseText.trim();
-      if (cleanedText.startsWith('```json') && cleanedText.endsWith('```')) {
-          cleanedText = cleanedText.substring(7, cleanedText.length - 3).trim();
-      }
-      try {
-        parsedResponse = JSON.parse(cleanedText);
-      } catch (parseError) {
-          console.error("Failed to parse Gemini JSON response:", parseError);
-          console.error("Raw text that failed parsing (after cleaning):", cleanedText);
-           return {
-              intent: 'UNKNOWN',
-              entities: {},
-              originalText: text,
-              error: 'Failed to parse response from AI model.',
-              rawResponse: responseText
-          };
-      }
-  
-      console.log("Parsed Gemini Response:", parsedResponse);
-      parsedResponse.originalText = text;
-      return parsedResponse;
+      // Return the generated text directly
+      console.log("Generated Natural Language Response:", responseText);
+      return responseText.trim(); // Trim whitespace
 
   } catch (error) {
     console.error(`Error in processNaturalLanguageQuery: ${error.message}\nStack: ${error.stack}`);
-    return {
-      intent: 'UNKNOWN',
-      entities: {},
-      originalText: text,
-      error: `Processing failed: ${error.message}`
-    };
+    return `Sorry, I encountered an error processing your request: ${error.message}`;
   }
 }
 
