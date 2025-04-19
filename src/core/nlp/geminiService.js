@@ -1,5 +1,5 @@
 const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/genai');
-const config = require('../../../config');
+const config = require('../../config');
 const { escapeMarkdownV2 } = require('../services/escapeUtil');
 
 if (!config.gemini.apiKey) {
