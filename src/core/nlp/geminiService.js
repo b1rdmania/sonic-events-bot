@@ -31,13 +31,11 @@ async function initializeGemini() {
 
     console.log('GoogleGenAI class successfully retrieved, type:', typeof GoogleGenAIClass);
 
-    if (!config.gemini.apiKey) { // Add check here before instantiation
+    if (!config.gemini.apiKey) {
       throw new Error('Missing required environment variable: GEMINI_API_KEY cannot instantiate');
     }
 
     console.log('Instantiating GoogleGenAI using { apiKey: ... }');
-    // Store the actual instance in the resolved promise
-    // return new GoogleGenAIClass(config.gemini.apiKey); // Old direct key passing
     return new GoogleGenAIClass({ apiKey: config.gemini.apiKey }); // Correct instantiation for v0.9.0
   } catch (error) {
       console.error('Failed to dynamically import or initialize @google/genai:', error);
@@ -75,16 +73,14 @@ const exampleOutput5 = JSON.stringify({ intent: "REQUIRES_CLARIFICATION", entiti
  */
 async function processNaturalLanguageQuery(text, context = {}) {
   try {
-    // Ensure Gemini is initialized (this will run the import on the first call)
     await initializeGemini();
 
-    // Strict check if initialization failed
     if (!GoogleGenAIClass) {
          console.error("Cannot process NLP query because GoogleGenAIClass is not initialized.");
          throw new Error('Gemini AI class is not available due to initialization failure.');
     }
 
-    // Dynamically import HarmCategory/HarmBlockThreshold if needed for safetySettings
+    // Initialize safety settings lazily
     if (!safetySettings) {
         const { HarmCategory, HarmBlockThreshold } = await import('@google/genai');
         safetySettings = [
@@ -95,30 +91,17 @@ async function processNaturalLanguageQuery(text, context = {}) {
         ];
     }
 
-    // Instantiate using the correct retrieved class
-    console.log('Attempting to instantiate GoogleGenAI...');
-    const genAI = new GoogleGenAIClass(config.gemini.apiKey); // Use the correct class variable
-    console.log('GoogleGenAI instantiation successful.');
+    const genAI = await initializeGemini(); // Get the initialized instance
 
-    // --- START INSPECTION LOGS ---
-    console.log('--- Inspecting genAI object ---');
-    try {
-        console.log('Keys of genAI instance:', Object.keys(genAI));
-        console.log('Keys of genAI prototype:', Object.getPrototypeOf(genAI) ? Object.keys(Object.getPrototypeOf(genAI)) : 'Prototype not found');
-        // Log the types of potential method names
-        console.log('Type of genAI.getGenerativeModel:', typeof genAI.getGenerativeModel);
-        console.log('Type of genAI.models:', typeof genAI.models);
-    } catch (logError) {
-        console.error('Error inspecting genAI object:', logError);
-    }
-    console.log('--- End Inspecting genAI object ---');
-    // --- END INSPECTION LOGS ---
-
-    // --- Now use the genAI instance with the NEW SDK pattern ---
-    const modelId = config.gemini.modelId || "gemini-2.0-flash"; // Fallback model
-    console.log(`Using model ID: ${modelId}. Getting generative model (expecting failure)...`);
-    const model = genAI.getGenerativeModel({ model: modelId }); // KEEP THE FAILING LINE FOR NOW
-    console.log('Successfully got generative model (this message likely won\'t appear).');
+    // --- USE CORRECT SDK PATTERN: genAI.models.getGenerativeModel --- 
+    const modelId = config.gemini.modelId || "gemini-2.0-flash";
+    console.log(`Using model: ${modelId}. Getting model via genAI.models.getGenerativeModel...`);
+    const model = genAI.models.getGenerativeModel({ // Correct method call on models submodule
+        model: modelId,
+        safetySettings: safetySettings,
+        generationConfig: { responseMimeType: "application/json" }
+    });
+    console.log('Successfully got generative model.');
 
     const availableEvents = context.events || [];
     const eventContextString = availableEvents.length > 0
@@ -177,14 +160,9 @@ Return ONLY a JSON object with the following structure:
     // Construct the final prompt
     const fullPrompt = `${prompt}\n\"${text}\"`;
 
-    // Call generateContent directly on the models submodule
-    // The method takes a single object argument
-    const result = await genAI.models.generateContent({
-      model: modelId,
-      contents: [{ role: "user", parts: [{ text: fullPrompt }] }], // Use correct contents structure
-      safetySettings: safetySettings,
-      generationConfig: { responseMimeType: "application/json" },
-    });
+    // Now call generateContent on the obtained model object
+    console.log("Calling model.generateContent...");
+    const result = await model.generateContent(fullPrompt); // Use the model object obtained above
 
     // Process the result
     const response = result.response;
@@ -289,7 +267,6 @@ Return ONLY a JSON object with the following structure:
  */
 async function formatDataWithGemini(data, userQueryContext = "the user's request") {
   try {
-    // Ensure Gemini is initialized
     await initializeGemini();
 
     if (!GoogleGenAIClass) {
@@ -297,7 +274,7 @@ async function formatDataWithGemini(data, userQueryContext = "the user's request
       throw new Error('Gemini AI class is not available due to initialization failure.');
     }
 
-    // Initialize safety settings if not already done
+    // Initialize safety settings lazily
     if (!safetySettings) {
         const { HarmCategory, HarmBlockThreshold } = await import('@google/genai');
         safetySettings = [
@@ -308,27 +285,16 @@ async function formatDataWithGemini(data, userQueryContext = "the user's request
         ];
     }
 
-    console.log('Attempting to instantiate GoogleGenAI for formatting...');
-    const genAI = new GoogleGenAIClass(config.gemini.apiKey);
-    console.log('GoogleGenAI instantiation successful for formatting.');
+    const genAI = await initializeGemini(); // Get the initialized instance
 
-    // --- START INSPECTION LOGS ---
-    console.log('--- Inspecting genAI object (formatter) ---');
-    try {
-        console.log('Keys of genAI instance (formatter):', Object.keys(genAI));
-        console.log('Keys of genAI prototype (formatter):', Object.getPrototypeOf(genAI) ? Object.keys(Object.getPrototypeOf(genAI)) : 'Prototype not found');
-        console.log('Type of genAI.getGenerativeModel (formatter):', typeof genAI.getGenerativeModel);
-        console.log('Type of genAI.models (formatter):', typeof genAI.models);
-    } catch (logError) {
-        console.error('Error inspecting genAI object (formatter):', logError);
-    }
-    console.log('--- End Inspecting genAI object (formatter) ---');
-    // --- END INSPECTION LOGS ---
-
-    const modelId = config.gemini.modelId || "gemini-2.0-flash"; // Fallback model
-    console.log(`Using model ID: ${modelId} for formatting. Getting generative model (expecting failure)...`);
-    const model = genAI.getGenerativeModel({ model: modelId }); // KEEP THE FAILING LINE FOR NOW
-    console.log('Successfully got generative model for formatting (this message likely won\'t appear).');
+    // --- USE CORRECT SDK PATTERN: genAI.models.getGenerativeModel --- 
+    const modelId = config.gemini.modelId || "gemini-2.0-flash";
+    console.log(`Using model: ${modelId} for formatting. Getting model via genAI.models.getGenerativeModel...`);
+    const model = genAI.models.getGenerativeModel({ // Correct method call on models submodule
+        model: modelId,
+        safetySettings: safetySettings
+    });
+    console.log('Successfully got generative model for formatting.');
 
     const prompt = `
 You are an AI assistant helping format API data into a user-friendly, concise, and readable response for Telegram.
@@ -353,13 +319,9 @@ ${JSON.stringify(data, null, 2)}
 Formatted Response:
 `;
 
-    // Call generateContent directly on the models submodule
-    const result = await genAI.models.generateContent({
-        model: modelId,
-        contents: [{ role: "user", parts: [{ text: prompt }] }], // Use correct contents structure
-        safetySettings: safetySettings,
-        // No specific generationConfig needed here? Default is usually text.
-    });
+    // Now call generateContent on the obtained model object
+    console.log("Calling model.generateContent for formatting...");
+    const result = await model.generateContent(prompt); // Use the model object obtained above
 
     const response = result.response;
 
