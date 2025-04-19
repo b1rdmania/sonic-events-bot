@@ -1,86 +1,44 @@
-// Force redeploy again after cache purge
-// Force redeploy
-// const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/genai'); // Original import commented out for debugging
+// Remove previous debug logging and commented out import
 const config = require('../../config');
 const { escapeMarkdownV2 } = require('../services/escapeUtil');
 
-// --- START DEBUG LOGGING ---
-console.log('--- Debugging @google/genai import ---');
-let GoogleGenerativeAI;
-let HarmCategory;
-let HarmBlockThreshold;
-try {
-    const genaiModule = require('@google/genai');
-    console.log('Raw required module:', genaiModule);
-    // Check if it's an object before getting keys
-    if (genaiModule && typeof genaiModule === 'object') {
-        console.log('Keys in required module:', Object.keys(genaiModule));
-    } else {
-        console.log('Required module is not an object or is null/undefined');
-    }
+// Global variable to hold the initialized client promise
+let genAIInstancePromise = null;
 
-    // Destructure after logging the raw module
-    ({ GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = genaiModule);
+// Async function to initialize the GenAI client if not already done
+async function initializeGenAI() {
+  if (!genAIInstancePromise) {
+    console.log('Dynamically importing @google/genai...');
+    genAIInstancePromise = import('@google/genai').then(genaiModule => {
+        console.log('Dynamic import successful. Type of GoogleGenerativeAI:', typeof genaiModule.GoogleGenerativeAI);
+        if (!genaiModule.GoogleGenerativeAI) {
+            console.error('GoogleGenerativeAI not found in dynamically imported module:', genaiModule);
+            throw new Error('GoogleGenerativeAI not found in dynamically imported module.');
+        }
+        if (typeof genaiModule.GoogleGenerativeAI !== 'function') {
+           console.error('GoogleGenerativeAI is not a function/constructor after dynamic import. Type:', typeof genaiModule.GoogleGenerativeAI);
+            throw new Error('GoogleGenerativeAI is not a function/constructor after dynamic import.');
+        }
 
-    console.log('Destructured GoogleGenerativeAI:', GoogleGenerativeAI);
-    console.log('Type of GoogleGenerativeAI:', typeof GoogleGenerativeAI);
+        if (!config.gemini.apiKey) {
+          throw new Error('Missing required environment variable: GEMINI_API_KEY during dynamic init');
+        }
 
-    // Also log the config value to ensure it's loaded
-    console.log('API Key from config:', config?.gemini?.apiKey ? 'Exists' : 'MISSING or undefined');
-
-} catch (importError) {
-    console.error('ERROR during import:', importError);
-    // Rethrow or handle appropriately if needed, but logging is key
-    throw importError;
-}
-console.log('--- End Debugging @google/genai import ---');
-// --- END DEBUG LOGGING ---
-
-if (!config.gemini.apiKey) {
-  // This check might be redundant now due to logging above, but keep for safety
-  throw new Error('Missing required environment variable: GEMINI_API_KEY');
+        console.log('Instantiating GoogleGenerativeAI dynamically...');
+        // Store the actual instance in the resolved promise
+        return new genaiModule.GoogleGenerativeAI(config.gemini.apiKey);
+    }).catch(err => {
+        console.error("Failed to dynamically import or initialize @google/genai:", err);
+        genAIInstancePromise = null; // Reset promise on failure
+        throw err; // Rethrow to calling function
+    });
+  }
+  return genAIInstancePromise;
 }
 
-// Line 11: The problematic line
-console.log('Attempting to instantiate GoogleGenerativeAI...'); // Added log
-const genAI = new GoogleGenerativeAI(config.gemini.apiKey); // <-- Line 11 (effectively)
-console.log('Instantiation successful (this message likely won\'t appear)'); // Added log - Fixed potential string issue here
-
-// Define safety settings
-const safetySettings = [
-  {
-    category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-  },
-  {
-    category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-  },
-  {
-    category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-  },
-  {
-    category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-  },
-];
-
-// Gemini model configuration
-const model = genAI.getGenerativeModel({
-  model: "gemini-2.0-flash", // Use the desired model name
-  safetySettings: [
-    {
-      category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-      threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-    },
-    // ... other safety settings ...
-  ],
-  generationConfig: {
-    responseMimeType: "application/json",
-  },
-});
-
+// Define safety settings (can remain global)
+let safetySettings = null;
+// Define possible intents (can remain global)
 const possibleIntents = [
   'GET_EVENTS', // List events
   'GET_GUESTS', // List guests for an event
@@ -92,7 +50,8 @@ const possibleIntents = [
   'UNKNOWN' // When the intent cannot be determined
 ];
 
-// Define example JSON outputs as separate strings for clarity
+// Define example JSON outputs (can remain global)
+// ... (keep existing exampleOutput strings) ...
 const exampleOutput1 = JSON.stringify({ intent: "GET_GUESTS", entities: { event_id: "[RESOLVED_ID_OF_NEXT_EVENT_FROM_CONTEXT]", status_filter: "approved" }, requires_clarification: false });
 const exampleOutput2 = JSON.stringify({ intent: "GET_EVENT_DETAILS", entities: { event_id: "evt-abc" }, requires_clarification: false });
 const exampleOutput3 = JSON.stringify({ intent: "GET_GUESTS", entities: { event_id: "evt-pL3FEVQfjNqlBBJ", status_filter: "pending_approval" }, requires_clarification: false });
@@ -106,17 +65,40 @@ const exampleOutput5 = JSON.stringify({ intent: "REQUIRES_CLARIFICATION", entiti
  * @returns {Promise<object>} - A promise resolving to an object with intent, entities, or error/clarification.
  */
 async function processNaturalLanguageQuery(text, context = {}) {
-  const availableEvents = context.events || [];
-  const eventContextString = availableEvents.length > 0
-    ? `\\n\\nAvailable Events Context (Name, ID, Start Time):\\n${availableEvents.map(e => `- ${e.name} (ID: ${e.api_id}, Starts: ${e.start_at || 'N/A'})`).join('\\n')}`
-    : "\\n\\nNo specific event context available.";
+  try {
+    // Ensure GenAI is initialized (fetches or waits for the promise)
+    const genAI = await initializeGenAI();
 
-  // Build prompt parts
-  const intro = `You are an AI assistant integrated with Luma (lu.ma) event management via its API.
+    // Dynamically import HarmCategory/HarmBlockThreshold here if needed for safetySettings
+    // Or initialize safetySettings after the first successful import
+    if (!safetySettings) {
+        const { HarmCategory, HarmBlockThreshold } = await import('@google/genai');
+        safetySettings = [
+            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+        ];
+    }
+
+    // Define the model *inside* the function using the initialized genAI
+    const model = genAI.getGenerativeModel({
+        model: "gemini-2.0-flash",
+        safetySettings: safetySettings,
+        generationConfig: { responseMimeType: "application/json" }
+    });
+
+    const availableEvents = context.events || [];
+    const eventContextString = availableEvents.length > 0
+      ? `\\n\\nAvailable Events Context (Name, ID, Start Time):\\n${availableEvents.map(e => `- ${e.name} (ID: ${e.api_id}, Starts: ${e.start_at || 'N/A'})`).join('\\n')}`
+      : "\\n\\nNo specific event context available.";
+
+    // Build prompt parts
+    const intro = `You are an AI assistant integrated with Luma (lu.ma) event management via its API.
 Your task is to analyze user messages and determine the user's intent and extract relevant entities for API calls, using the provided context.`;
-  const userRequestSection = `\n\nUser Request: "${text}"`;
-  const contextSection = eventContextString;
-  const outputFormatSection = `\n\n**Output Format:**
+    const userRequestSection = `\n\nUser Request: "${text}"`;
+    const contextSection = eventContextString;
+    const outputFormatSection = `\n\n**Output Format:**
 Return ONLY a JSON object with the following structure:
 {
   "intent": "...", // One of the possible intents: ${possibleIntents.join(', ')}
@@ -129,7 +111,7 @@ Return ONLY a JSON object with the following structure:
   "requires_clarification": boolean, // True if more info is needed from the user
   "clarification_prompt": "..." // (Optional) A question to ask the user if requires_clarification is true
 }`; // End backtick for this section
-  const rulesSection = `\n\n**Intent Determination & Event Resolution Rules:**
+    const rulesSection = `\n\n**Intent Determination & Event Resolution Rules:**
 
 1.  **Analyze Request:** Determine the core intent (e.g., GET_GUESTS, GET_EVENT_DETAILS).
 2.  **Identify Event Reference:** Look for an event_id directly in the request OR an event_name OR a relative term like "next event", "latest event", "first event".
@@ -143,7 +125,7 @@ Return ONLY a JSON object with the following structure:
 4.  **Handle Standalone Event ID:** If the user provides *only* an event ID (e.g., "evt-xyz123"), set intent to GET_EVENT_DETAILS and populate \`entities.event_id\`.
 5.  **Status Filter:** For GET_GUESTS/GET_GUEST_COUNT, map terms like 'pending' to 'pending_approval'. Use 'approved' as default if unspecified. Valid values: 'approved', 'pending_approval', 'declined', 'invited'. Clarify if ambiguous.
 6.  **Detail Requested:** For GET_EVENT_DETAILS, extract the specific detail asked for (name, start_time, location, etc.). Map natural language (when->start_time, where->location). If only an ID or general request was made, leave \`detail_requested\` null/empty.`; // End backtick for this section
-  const examplesSection = `\n\n**Examples (using context above if relevant):**
+    const examplesSection = `\n\n**Examples (using context above if relevant):**
 
 *   User: "who is coming to the next event?"
     *   Output: ${exampleOutput1}
@@ -155,69 +137,56 @@ Return ONLY a JSON object with the following structure:
     *   Output: ${exampleOutput4}
 *   User: "approve test@test.com for the dubai event"
     *   Output: ${exampleOutput5} (If multiple Dubai events in context)`; // End backtick for this section
-  const finalInstruction = `\n\nAnalyze the user message based on the rules and context. Output only the JSON object.`;
+    const finalInstruction = `\n\nAnalyze the user message based on the rules and context. Output only the JSON object.`;
 
-  // Combine prompt parts
-  const prompt = intro + userRequestSection + contextSection + outputFormatSection + rulesSection + examplesSection + finalInstruction;
-
-  try {
-    // Define the model *inside* the function
-    const model = genAI.getGenerativeModel({
-        model: "gemini-2.0-flash", // Or use a specific model name variable
-        safetySettings: safetySettings,
-        generationConfig: { responseMimeType: "application/json" }
-    });
-
-    // Add a small delay to help mitigate rapid-fire requests hitting free tier limit
-    await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
+    // Combine prompt parts
+    const prompt = intro + userRequestSection + contextSection + outputFormatSection + rulesSection + examplesSection + finalInstruction;
 
     // Construct the final prompt
-    const fullPrompt = `${prompt}\n"${text}"`; // Ensure prompt variable is used correctly
+    const fullPrompt = `${prompt}\n"${text}"`;
 
-    // console.debug("Sending prompt to Gemini:", fullPrompt); // Uncomment for debugging
+    // Call generateContent directly on the model instance
+    console.log("Calling model.generateContent...");
+    const result = await model.generateContent(fullPrompt);
+    console.log("Raw Gemini API Result:", JSON.stringify(result, null, 2));
 
-    // Call generateContent directly on the models collection using the new SDK pattern
-    const result = await model.generateContent(fullPrompt); // Call generateContent on the model instance
-
-    console.log("Raw Gemini API Result:", JSON.stringify(result, null, 2)); // Log raw result
-
-    // --- Switch to using result.response structure from here based on previous logs --- 
-    const response = result.response; 
+    // ... (rest of the result processing logic remains the same)
+    const response = result.response;
     const candidates = response?.candidates;
 
     if (!candidates || candidates.length === 0 || !candidates[0].content || !candidates[0].content.parts || candidates[0].content.parts.length === 0 || !candidates[0].content.parts[0].text) {
-      console.error('No valid text part found in Gemini response candidates:', JSON.stringify(result, null, 2));
-      // Check for block reason (assuming it might be on result or result.promptFeedback?)
-      // Let's check the raw result structure log if this part fails
-      const promptFeedback = response?.promptFeedback; // Check if promptFeedback exists on result
-      if (promptFeedback?.blockReason) {
-        console.error("Prompt blocked:", promptFeedback.blockReason);
-         return {
-            intent: 'BLOCKED',
-            entities: {},
-            originalText: text,
-            error: `Request blocked due to safety settings: ${promptFeedback.blockReason}`
+        console.error('No valid text part found in Gemini response candidates:', JSON.stringify(result, null, 2));
+        // Check for block reason (assuming it might be on result or result.promptFeedback?)
+        // Let's check the raw result structure log if this part fails
+        const promptFeedback = response?.promptFeedback; // Check if promptFeedback exists on result
+        if (promptFeedback?.blockReason) {
+            console.error("Prompt blocked:", promptFeedback.blockReason);
+             return {
+                intent: 'BLOCKED',
+                entities: {},
+                originalText: text,
+                error: `Request blocked due to safety settings: ${promptFeedback.blockReason}`
+            };
+        }
+        // Check for finish reason in candidate
+        if (candidates && candidates.length > 0 && candidates[0].finishReason && candidates[0].finishReason !== 'STOP') {
+            console.error("Candidate finished with reason:", candidates[0].finishReason);
+             return {
+                intent: 'UNKNOWN',
+                entities: {},
+                originalText: text,
+                error: `AI response generation stopped unexpectedly (${candidates[0].finishReason}).`,
+                rawResponse: JSON.stringify(result, null, 2)
+              };
+        }
+        // Generic error if no specific reason found
+        return {
+          intent: 'UNKNOWN',
+          entities: {},
+          originalText: text,
+          error: 'Received an empty or invalid response structure from AI model.',
+          rawResponse: JSON.stringify(result, null, 2) // Log the full result structure
         };
-      }
-      // Check for finish reason in candidate
-      if (candidates && candidates.length > 0 && candidates[0].finishReason && candidates[0].finishReason !== 'STOP') {
-        console.error("Candidate finished with reason:", candidates[0].finishReason);
-         return {
-            intent: 'UNKNOWN',
-            entities: {},
-            originalText: text,
-            error: `AI response generation stopped unexpectedly (${candidates[0].finishReason}).`,
-            rawResponse: JSON.stringify(result, null, 2)
-          };
-      }
-      // Generic error if no specific reason found
-      return {
-        intent: 'UNKNOWN',
-        entities: {},
-        originalText: text,
-        error: 'Received an empty or invalid response structure from AI model.',
-        rawResponse: JSON.stringify(result, null, 2) // Log the full result structure
-      };
     }
     const responseText = candidates[0].content.parts[0].text;
 
@@ -251,7 +220,7 @@ Return ONLY a JSON object with the following structure:
     return parsedResponse;
 
   } catch (error) {
-    console.error("Error calling Gemini API:", error);
+    console.error("Error in processNaturalLanguageQuery:", error);
     // Attempt to access potential safety feedback (structure might differ in new SDK)
     if (error.response && error.response.promptFeedback?.blockReason) {
         console.error("Gemini API request blocked:", error.response.promptFeedback.blockReason);
@@ -289,19 +258,34 @@ Return ONLY a JSON object with the following structure:
 /**
  * Takes raw data and instructions, asks Gemini to format it for the user.
  * @param {object|array} data - The raw data to be formatted (e.g., list of events, guests).
- * @param {string} instruction - Instruction for Gemini on how to format/present the data.
+ * @param {string} userQueryContext - Context for the formatting request.
  * @returns {Promise<string>} - Gemini's formatted text response.
  * @throws {Error} - If the API call fails or returns an unexpected response.
  */
 async function formatDataWithGemini(data, userQueryContext = "the user's request") {
-  // Define the model *inside* the function
-  const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash", // Or use a specific model name variable
-      safetySettings: safetySettings
-      // No generationConfig needed for text response
-  });
+  try {
+    // Ensure GenAI is initialized
+    const genAI = await initializeGenAI();
 
-  const prompt = `
+    // Initialize safety settings if not already done
+    if (!safetySettings) {
+        const { HarmCategory, HarmBlockThreshold } = await import('@google/genai');
+        safetySettings = [
+            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+        ];
+    }
+
+    // Define the model *inside* the function
+    const model = genAI.getGenerativeModel({
+        model: "gemini-2.0-flash",
+        safetySettings: safetySettings
+        // No generationConfig needed for text response
+    });
+
+    const prompt = `
 You are an AI assistant helping format API data into a user-friendly, concise, and readable response for Telegram.
 The user asked about: "${userQueryContext}"
 The raw data obtained from the Luma API is below (JSON format).
@@ -324,10 +308,8 @@ ${JSON.stringify(data, null, 2)}
 Formatted Response:
 `;
 
-  try {
-    // Add a small delay
-    await new Promise(resolve => setTimeout(resolve, 200));
-
+    // Call generateContent
+    console.log("Calling model.generateContent for formatting...");
     const result = await model.generateContent(prompt);
     const response = result.response;
 
@@ -350,7 +332,8 @@ Formatted Response:
     return formattedText;
 
   } catch (error) {
-    console.error("Error calling Gemini API for formatting:", error);
+    console.error("Error in formatDataWithGemini:", error);
+    // Attempt to access potential safety feedback (structure might differ in new SDK)
     if (error.response && error.response.promptFeedback?.blockReason) {
         console.error("Formatting request blocked:", error.response.promptFeedback.blockReason);
         return escapeMarkdownV2(`Failed to format response due to safety settings: ${error.response.promptFeedback.blockReason}`);
