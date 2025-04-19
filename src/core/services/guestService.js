@@ -30,7 +30,7 @@ async function getEventGuests(encryptedApiKey, eventApiId, options = {}) {
     const guestName = escapeMarkdownV2(guest.name || 'N/A');
     const guestEmail = escapeMarkdownV2(guest.email || 'N/A');
     const guestStatus = escapeMarkdownV2(guest.approval_status || 'N/A');
-    reply += `${index + 1}\. ${guestName} \(${guestEmail}\) \- Status: ${guestStatus}\n`;
+    reply += `${index + 1}\\. ${guestName} \(${guestEmail}\) \- Status: ${guestStatus}\n`;
   });
 
   if (result.has_more) {
