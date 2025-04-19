@@ -51,7 +51,7 @@ async function getGeminiInstance() {
 }
 // --- End Singleton Pattern ---
 
-// Define safety settings (can remain global, initialized lazily)
+// Define safety settings (can remain global, initialized lazily) // v86 trigger
 let safetySettings = null;
 // Define possible intents (can remain global)
 const possibleIntents = [
