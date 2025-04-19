@@ -30,7 +30,7 @@ const safetySettings = [
 
 // Select the model
 // Use a model suitable for function calling/structured output if possible (e.g., gemini-pro)
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest', safetySettings });
+const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash', safetySettings });
 
 /**
  * Processes natural language text using Gemini to extract intent and entities.
