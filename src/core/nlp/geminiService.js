@@ -10,6 +10,7 @@ async function initializeGenAI() {
   if (!genAIInstancePromise) {
     console.log('Dynamically importing @google/genai...');
     genAIInstancePromise = import('@google/genai').then(genaiModule => {
+        console.log('Dynamically imported genaiModule structure:', genaiModule);
         console.log('Dynamic import successful. Type of GoogleGenerativeAI:', typeof genaiModule.GoogleGenerativeAI);
         if (!genaiModule.GoogleGenerativeAI) {
             console.error('GoogleGenerativeAI not found in dynamically imported module:', genaiModule);
