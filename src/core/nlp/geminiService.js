@@ -168,42 +168,36 @@ Your task is to analyze user messages and determine the user's intent and extrac
         generationConfig: { responseMimeType: "application/json" },
     });
 
-    // 5. Process result (keep existing logic, BUT use result directly)
+    // 5. Process result
     const candidates = result?.candidates;
 
-    if (!candidates || candidates.length === 0 || !candidates[0].content || !candidates[0].content.parts || candidates[0].content.parts.length === 0 || !candidates[0].content.parts[0].text) {
-        console.error('No valid text part found in Gemini response candidates:', JSON.stringify(result, null, 2));
-        const promptFeedback = result?.promptFeedback;
+    // --- Simpler check using optional chaining --- 
+    const responseText = candidates?.[0]?.content?.parts?.[0]?.text;
+
+    // Check if responseText is missing or empty after optional chaining
+    if (!responseText) { 
+        console.error('No valid text part found in Gemini response candidates (checked via optional chaining):', JSON.stringify(result, null, 2));
+        const promptFeedback = result?.promptFeedback; // Check for promptFeedback directly on result
         if (promptFeedback?.blockReason) {
-          console.error("Prompt blocked:", promptFeedback.blockReason);
-           return {
-              intent: 'BLOCKED',
-              entities: {},
-              originalText: text,
-              error: `Request blocked due to safety settings: ${promptFeedback.blockReason}`
-          };
+            console.error("Prompt blocked:", promptFeedback.blockReason);
+            return { intent: 'BLOCKED', entities: {}, originalText: text, error: `Request blocked due to safety settings: ${promptFeedback.blockReason}` };
         }
         if (candidates && candidates.length > 0 && candidates[0].finishReason && candidates[0].finishReason !== 'STOP') {
-          console.error("Candidate finished with reason:", candidates[0].finishReason);
-           return {
-              intent: 'UNKNOWN',
-              entities: {},
-              originalText: text,
-              error: `AI response generation stopped unexpectedly (${candidates[0].finishReason}).`,
-              rawResponse: JSON.stringify(result, null, 2)
-            };
+            console.error("Candidate finished with reason:", candidates[0].finishReason);
+            return { intent: 'UNKNOWN', entities: {}, originalText: text, error: `AI response generation stopped unexpectedly (${candidates[0].finishReason}).`, rawResponse: JSON.stringify(result, null, 2) };
         }
+        // Generic error if text is still missing
         return {
           intent: 'UNKNOWN',
           entities: {},
           originalText: text,
-          error: 'Received an empty or invalid response structure from AI model.',
-          rawResponse: JSON.stringify(result, null, 2)
+          error: 'Received an empty or invalid text response from AI model.',
+          rawResponse: JSON.stringify(result, null, 2) // Log the actual result object
         };
       }
-      const responseText = candidates[0].content.parts[0].text;
-  
-      // console.log("Raw Gemini Response Text (pre-cleaning):", responseText); // Can comment out
+      // --- End Simpler Check --- 
+      
+      // console.log("Raw Gemini Response Text (pre-cleaning):", responseText);
   
       // Attempt to parse the JSON response
       let parsedResponse;
@@ -307,11 +301,16 @@ Formatted Response:
         safetySettings: safetySettings,
     });
 
-    // 5. Process result (keep existing logic, BUT use result directly)
+    // 5. Process result
     const candidates = result?.candidates;
 
-    if (!candidates || candidates.length === 0 || !candidates[0].content || !candidates[0].content.parts || candidates[0].content.parts.length === 0 || !candidates[0].content.parts[0].text) {
-        const promptFeedback = result?.promptFeedback;
+    // --- Simpler check using optional chaining --- 
+    const responseText = candidates?.[0]?.content?.parts?.[0]?.text;
+
+    // Check if responseText is missing or empty after optional chaining
+    if (!responseText) {
+        console.error("Invalid response structure (no text) from Gemini formatting model (checked via optional chaining):", JSON.stringify(result, null, 2));
+        const promptFeedback = result?.promptFeedback; // Check directly on result
         if (promptFeedback?.blockReason) {
             console.error("Formatting prompt blocked:", promptFeedback.blockReason);
             return escapeMarkdownV2(`I couldn\'t format the response due to safety settings: ${promptFeedback.blockReason}`);
@@ -320,10 +319,13 @@ Formatted Response:
            console.error("Formatting candidate finished with reason:", candidates[0].finishReason);
            return escapeMarkdownV2(`Sorry, I encountered an issue while formatting the data (${candidates[0].finishReason}).`);
         }
-        console.error("Invalid response structure from Gemini formatting model:", JSON.stringify(result, null, 2));
-        return escapeMarkdownV2("Sorry, I couldn\'t format the data properly.");
+        // Generic error if text is still missing
+        return escapeMarkdownV2("Sorry, I couldn\'t format the data properly (missing text).");
     }
-    const formattedText = candidates[0].content.parts[0].text;
+    // --- End Simpler Check --- 
+
+    // Process the valid text (KEEP EXISTING CLEANING LOGIC FOR FORMATTER IF NEEDED, though likely not needed here)
+    const formattedText = responseText; // Assume formatter doesn't wrap in ```json
     return formattedText;
 
   } catch (error) {
