@@ -69,19 +69,30 @@ JSON Response:
     // Add a small delay to help mitigate rapid-fire requests hitting free tier limit
     await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
 
-    // Get the model instance using the new client
-    const model = genAI.getGenerativeModel({ model: modelName });
-
-    // Call generateContent with the new structure
-    const result = await model.generateContent({
-        contents: [{ parts: [{ text: prompt }] }],
+    // Call generateContent directly on the models collection using the new SDK pattern
+    const result = await genAI.models.generateContent({
+        model: modelName, // Pass model name here
+        contents: [{ role: 'user', parts: [{ text: prompt }] }], // Adjust structure if needed by new SDK
         safetySettings: safetySettings
         // generationConfig could be added here if needed
     });
 
-    // Access response text using property (assuming .text based on Python example)
+    // Access response text using the .text convenience accessor
     const response = result.response;
-    const responseText = response.text; // Use .text property
+    // const candidates = response.candidates;
+
+    // if (!candidates || candidates.length === 0 || !candidates[0].content || !candidates[0].content.parts || candidates[0].content.parts.length === 0) {
+    //   console.error('No valid candidates found in Gemini response:', JSON.stringify(response));
+    //   return {
+    //     intent: 'UNKNOWN',
+    //     entities: {},
+    //     originalText: text,
+    //     error: 'Received an empty or invalid response structure from AI model.',
+    //     rawResponse: JSON.stringify(response) // Log the full response structure
+    //   };
+    // }
+    // const responseText = candidates[0].content.parts[0].text;
+    const responseText = response.text(); // Use the text() method/accessor
 
     console.log("Raw Gemini Response Text (pre-cleaning):", responseText);
 

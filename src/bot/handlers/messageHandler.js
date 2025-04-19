@@ -4,7 +4,7 @@ const { requireLink } = require('../middleware/auth');
 const prisma = require('../../core/db/prisma');
 const eventService = require('../../core/services/eventService');
 const guestService = require('../../core/services/guestService');
-const { escapeMarkdownV2 } = require('../../core/services/guestService');
+const { escapeMarkdownV2 } = require('../../core/services/escapeUtil');
 
 // Import command handlers to potentially reuse their logic
 // Note: This might require refactoring commands into reusable service functions later
