@@ -77,8 +77,12 @@ JSON Response:
         // generationConfig could be added here if needed
     });
 
+    console.log("Raw Gemini API Result:", JSON.stringify(result, null, 2)); // Log raw result
+
     // Access response text using the full structure
     const response = result.response;
+    console.log("Gemini API Response object:", JSON.stringify(response, null, 2)); // Log response object
+
     const candidates = response.candidates;
 
     if (!candidates || candidates.length === 0 || !candidates[0].content || !candidates[0].content.parts || candidates[0].content.parts.length === 0 || !candidates[0].content.parts[0].text) {
