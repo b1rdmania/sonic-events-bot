@@ -92,9 +92,25 @@ async function processNaturalLanguageQuery(text, context = {}) {
     const genAI = new GoogleGenAIClass(config.gemini.apiKey); // Use the correct class variable
     console.log('GoogleGenAI instantiation successful.');
 
+    // --- START INSPECTION LOGS ---
+    console.log('--- Inspecting genAI object ---');
+    try {
+        console.log('Keys of genAI instance:', Object.keys(genAI));
+        console.log('Keys of genAI prototype:', Object.getPrototypeOf(genAI) ? Object.keys(Object.getPrototypeOf(genAI)) : 'Prototype not found');
+        // Log the types of potential method names
+        console.log('Type of genAI.getGenerativeModel:', typeof genAI.getGenerativeModel);
+        console.log('Type of genAI.models:', typeof genAI.models);
+    } catch (logError) {
+        console.error('Error inspecting genAI object:', logError);
+    }
+    console.log('--- End Inspecting genAI object ---');
+    // --- END INSPECTION LOGS ---
+
     // --- Now use the genAI instance with the NEW SDK pattern ---
     const modelId = config.gemini.modelId || "gemini-2.0-flash"; // Fallback model
-    console.log(`Using model: ${modelId}. Generating content via ai.models.generateContent...`);
+    console.log(`Using model ID: ${modelId}. Getting generative model (expecting failure)...`);
+    const model = genAI.getGenerativeModel({ model: modelId }); // KEEP THE FAILING LINE FOR NOW
+    console.log('Successfully got generative model (this message likely won\'t appear).');
 
     const availableEvents = context.events || [];
     const eventContextString = availableEvents.length > 0
@@ -288,8 +304,23 @@ async function formatDataWithGemini(data, userQueryContext = "the user's request
     const genAI = new GoogleGenAIClass(config.gemini.apiKey);
     console.log('GoogleGenAI instantiation successful for formatting.');
 
+    // --- START INSPECTION LOGS ---
+    console.log('--- Inspecting genAI object (formatter) ---');
+    try {
+        console.log('Keys of genAI instance (formatter):', Object.keys(genAI));
+        console.log('Keys of genAI prototype (formatter):', Object.getPrototypeOf(genAI) ? Object.keys(Object.getPrototypeOf(genAI)) : 'Prototype not found');
+        console.log('Type of genAI.getGenerativeModel (formatter):', typeof genAI.getGenerativeModel);
+        console.log('Type of genAI.models (formatter):', typeof genAI.models);
+    } catch (logError) {
+        console.error('Error inspecting genAI object (formatter):', logError);
+    }
+    console.log('--- End Inspecting genAI object (formatter) ---');
+    // --- END INSPECTION LOGS ---
+
     const modelId = config.gemini.modelId || "gemini-2.0-flash"; // Fallback model
-    console.log(`Using model: ${modelId} for formatting. Generating content via ai.models.generateContent...`);
+    console.log(`Using model ID: ${modelId} for formatting. Getting generative model (expecting failure)...`);
+    const model = genAI.getGenerativeModel({ model: modelId }); // KEEP THE FAILING LINE FOR NOW
+    console.log('Successfully got generative model for formatting (this message likely won\'t appear).');
 
     const prompt = `
 You are an AI assistant helping format API data into a user-friendly, concise, and readable response for Telegram.
