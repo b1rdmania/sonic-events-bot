@@ -1,7 +1,7 @@
 {
   "name": "sonic-events-bot",
   "version": "1.0.0",
-  "description": "Telegram bot for Sonic Events management",
+  "description": "Telegram bot for managing Luma events",
   "main": "src/bot.js",
   "scripts": {
     "start": "node src/bot.js",
