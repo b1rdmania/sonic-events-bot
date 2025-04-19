@@ -92,14 +92,9 @@ async function processNaturalLanguageQuery(text, context = {}) {
     const genAI = new GoogleGenAIClass(config.gemini.apiKey); // Use the correct class variable
     console.log('GoogleGenAI instantiation successful.');
 
-    // --- Now use the genAI instance ---
+    // --- Now use the genAI instance with the NEW SDK pattern ---
     const modelId = config.gemini.modelId || "gemini-2.0-flash"; // Fallback model
-    const model = genAI.getGenerativeModel({
-        model: modelId,
-        safetySettings: safetySettings,
-        generationConfig: { responseMimeType: "application/json" }
-    });
-    console.log(`Using model: ${modelId}. Generating content...`);
+    console.log(`Using model: ${modelId}. Generating content via ai.models.generateContent...`);
 
     const availableEvents = context.events || [];
     const eventContextString = availableEvents.length > 0
@@ -156,12 +151,16 @@ Return ONLY a JSON object with the following structure:
     const prompt = intro + userRequestSection + contextSection + outputFormatSection + rulesSection + examplesSection + finalInstruction;
 
     // Construct the final prompt
-    const fullPrompt = `${prompt}\n"${text}"`;
+    const fullPrompt = `${prompt}\n\"${text}\"`;
 
-    // Call generateContent directly on the model instance
-    // console.log("Calling model.generateContent..."); // Can comment out if too verbose
-    const result = await model.generateContent(fullPrompt);
-    // console.log("Raw Gemini API Result:", JSON.stringify(result, null, 2)); // Can comment out
+    // Call generateContent directly on the models submodule
+    // The method takes a single object argument
+    const result = await genAI.models.generateContent({
+      model: modelId,
+      contents: [{ role: "user", parts: [{ text: fullPrompt }] }], // Use correct contents structure
+      safetySettings: safetySettings,
+      generationConfig: { responseMimeType: "application/json" },
+    });
 
     // Process the result
     const response = result.response;
@@ -290,11 +289,7 @@ async function formatDataWithGemini(data, userQueryContext = "the user's request
     console.log('GoogleGenAI instantiation successful for formatting.');
 
     const modelId = config.gemini.modelId || "gemini-2.0-flash"; // Fallback model
-    const model = genAI.getGenerativeModel({
-        model: modelId,
-        safetySettings: safetySettings
-    });
-    console.log(`Using model: ${modelId} for formatting. Generating content...`);
+    console.log(`Using model: ${modelId} for formatting. Generating content via ai.models.generateContent...`);
 
     const prompt = `
 You are an AI assistant helping format API data into a user-friendly, concise, and readable response for Telegram.
@@ -319,7 +314,14 @@ ${JSON.stringify(data, null, 2)}
 Formatted Response:
 `;
 
-    const result = await model.generateContent(prompt);
+    // Call generateContent directly on the models submodule
+    const result = await genAI.models.generateContent({
+        model: modelId,
+        contents: [{ role: "user", parts: [{ text: prompt }] }], // Use correct contents structure
+        safetySettings: safetySettings,
+        // No specific generationConfig needed here? Default is usually text.
+    });
+
     const response = result.response;
 
     if (!response || !response.candidates || response.candidates.length === 0 || !response.candidates[0].content || !response.candidates[0].content.parts || response.candidates[0].content.parts.length === 0 || !response.candidates[0].content.parts[0].text) {
