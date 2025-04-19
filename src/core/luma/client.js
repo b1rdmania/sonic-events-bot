@@ -174,12 +174,32 @@ async function updateGuestStatus(encryptedApiKey, eventApiId, guestEmail, newSta
   }
 }
 
+/**
+ * Gets details for a specific event.
+ * @param {string} encryptedApiKey - The encrypted Luma API key.
+ * @param {string} eventApiId - The API ID of the event to fetch.
+ * @returns {Promise<object>} - The event details from Luma API.
+ */
+async function getEvent(encryptedApiKey, eventApiId) {
+  const apiClient = createLumaApiClient(encryptedApiKey);
+  const context = 'getEvent';
+  try {
+    const params = { api_id: eventApiId }; // Luma API uses 'api_id' for this endpoint
+    const response = await apiClient.get('/event/get', { params });
+    console.info(`Luma API Success (${context}) - Fetched details for event ${eventApiId}`);
+    return response.data?.event; // Assuming the event data is nested under 'event'
+  } catch (error) {
+    handleApiError(error, context);
+  }
+}
+
 module.exports = {
   createLumaApiClient,
   handleApiError,
   getSelf,
   listEvents,
   getGuests,
+  getEvent,
   updateGuestStatus,
   // Export other API functions once defined
 }; 

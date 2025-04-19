@@ -5,6 +5,7 @@ const prisma = require('../../core/db/prisma');
 const eventService = require('../../core/services/eventService');
 const guestService = require('../../core/services/guestService');
 const { escapeMarkdownV2 } = require('../../core/services/escapeUtil');
+const geminiService = require('../../core/nlp/geminiService');
 
 /**
  * Middleware to check if the bot should respond to a message.
@@ -85,59 +86,66 @@ const messageHandler = async (ctx) => {
   await ctx.replyWithChatAction('typing'); // Show typing indicator
 
   try {
-    // 1. Fetch context (e.g., upcoming events)
+    // 1. Fetch context (e.g., upcoming events with start times)
     let eventContext = [];
     try {
-      // Fetch minimal data needed for context
-      const eventsResult = await lumaClient.listEvents(encryptedApiKey, { /* Consider limiting fields if possible */ });
+      // Fetch minimal data needed for context: ID, Name, Start Time
+      const eventsResult = await lumaClient.listEvents(encryptedApiKey, {
+         // Potentially add sorting or date filters if API supports & needed
+         // Luma API might return events in chronological order by default
+      });
       if (eventsResult?.entries) {
-        eventContext = eventsResult.entries.map(e => ({ api_id: e.api_id, name: e.name }));
+        // Include start_at for context processing
+        eventContext = eventsResult.entries.map(e => ({
+          api_id: e.api_id,
+          name: e.name,
+          start_at: e.start_at // Add start time
+        }));
+        // Optional: Sort context client-side if needed, though Gemini might handle it
+        // eventContext.sort((a, b) => new Date(a.start_at) - new Date(b.start_at));
       }
     } catch (eventError) {
       console.error("Failed to fetch event context for NLP:", eventError);
     }
 
-    // 2. Call Gemini Service for Intent/Entity Extraction
+    // 2. Call Gemini Service for Intent/Entity Extraction (passing richer context)
     const nlpResult = await processNaturalLanguageQuery(userText, { events: eventContext });
 
     console.log("NLP Result:", JSON.stringify(nlpResult, null, 2));
 
     // 3. Process NLP Result (Errors and Clarifications first)
     if (nlpResult.error) {
-      // Still escape the error message from NLP service
       return ctx.replyWithMarkdownV2(escapeMarkdownV2(`Error processing your request: ${nlpResult.error}`));
     }
     if (nlpResult.intent === 'BLOCKED') {
         return ctx.replyWithMarkdownV2(escapeMarkdownV2('Sorry, your request could not be processed due to safety restrictions.'));
     }
-    if (nlpResult.requires_clarification && nlpResult.clarification_message) {
-      // Send clarification message from NLP (already formatted)
-      return ctx.replyWithMarkdownV2(escapeMarkdownV2(nlpResult.clarification_message));
+    // Handle clarification requests from Gemini directly
+    if (nlpResult.requires_clarification && nlpResult.clarification_prompt) {
+      return ctx.replyWithMarkdownV2(escapeMarkdownV2(nlpResult.clarification_prompt));
     }
 
-    // 4. Resolve Event ID if needed for the intent
+    // 4. Event ID Validation/Resolution (Simplified)
     let resolvedEventId = nlpResult.entities?.event_id || null;
-    let needsEvent = ['GET_GUESTS', 'GET_GUEST_COUNT', 'APPROVE_GUEST', 'REJECT_GUEST'].includes(nlpResult.intent);
+    const needsEvent = ['GET_GUESTS', 'GET_GUEST_COUNT', 'APPROVE_GUEST', 'REJECT_GUEST', 'GET_EVENT_DETAILS'].includes(nlpResult.intent);
 
+    // If intent needs an event ID but Gemini didn't resolve one (and didn't ask for clarification),
+    // something is wrong in the NLP logic or prompt.
     if (needsEvent && !resolvedEventId) {
-        const resolution = resolveEventId(nlpResult.entities, eventContext);
-        if (resolution.eventId) {
-            resolvedEventId = resolution.eventId;
-            console.log(`Resolved event ID: ${resolvedEventId} from name "${nlpResult.entities?.event_name}"`);
-        } else if (resolution.error === 'ambiguous') {
+        console.warn(`Intent ${nlpResult.intent} requires an event ID, but none was resolved by Gemini and no clarification was requested.`);
+        // Use the old resolveEventId as a fallback or ask a generic question
+        const resolution = resolveEventId(nlpResult.entities, eventContext); // Pass original entities
+         if (resolution.error === 'ambiguous') {
             let clarification = `Which event did you mean?\n`;
-            // Escape parts of the clarification message
             resolution.matches.forEach(m => clarification += `\- ${escapeMarkdownV2(m.name || 'Unnamed')} \(ID: \`${escapeMarkdownV2(m.api_id)}\`\)\n`);
             return ctx.replyWithMarkdownV2(clarification);
-        } else if (resolution.error === 'missing') {
-            return ctx.replyWithMarkdownV2(escapeMarkdownV2('Please specify which event you are referring to (e.g., by name or ID).'));
         } else {
-            // Escape the error string from resolveEventId
-            return ctx.replyWithMarkdownV2(escapeMarkdownV2(resolution.error || 'Could not determine the event. Please specify the event ID.'));
+             // Generic fallback if event ID is missing and not handled by NLP clarification
+            return ctx.replyWithMarkdownV2(escapeMarkdownV2('Please specify which event you are referring to (e.g., by name or ID).'));
         }
     }
 
-    // --- Intent Routing --- 
+    // --- Intent Routing (using resolvedEventId from NLP) --- 
     await ctx.replyWithChatAction('typing'); // Show typing before service call
 
     switch (nlpResult.intent) {
@@ -166,7 +174,7 @@ const messageHandler = async (ctx) => {
           const guestData = await guestService.getEventGuests(encryptedApiKey, resolvedEventId, options);
           if (!guestData || guestData.entries.length === 0) {
               let noneFoundMsg = `No guests found for event ${resolvedEventId}`;
-              if (guestData?.statusFilter) noneFoundMsg += ` with status \"${guestData.statusFilter}\"`;
+              if (guestData?.statusFilter) noneFoundMsg += ` with status "${guestData.statusFilter}"`;
               noneFoundMsg += '.';
               return ctx.replyWithMarkdownV2(escapeMarkdownV2(noneFoundMsg));
           }
@@ -189,7 +197,7 @@ const messageHandler = async (ctx) => {
           const guestCountData = await guestService.getEventGuestCount(encryptedApiKey, resolvedEventId, options);
            if (!guestCountData) {
               let noneFoundMsg = `No guests found for event ${resolvedEventId}`;
-              if (options.approval_status) noneFoundMsg += ` with status \"${options.approval_status}\"`;
+              if (options.approval_status) noneFoundMsg += ` with status "${options.approval_status}"`;
               noneFoundMsg += '.';
               return ctx.replyWithMarkdownV2(escapeMarkdownV2(noneFoundMsg));
           }
@@ -233,6 +241,55 @@ const messageHandler = async (ctx) => {
           // Error message from service should already be simple text, escape it
           return ctx.replyWithMarkdownV2(escapeMarkdownV2(error.message));
         }
+
+      case 'GET_EVENT_DETAILS':
+        if (!resolvedEventId) return ctx.replyWithMarkdownV2(escapeMarkdownV2('Please specify the event ID to get details.'));
+        try {
+          const eventData = await lumaClient.getEvent(encryptedApiKey, resolvedEventId);
+          if (!eventData) {
+            return ctx.replyWithMarkdownV2(escapeMarkdownV2(`Could not find details for event ID \`${escapeMarkdownV2(resolvedEventId)}\`\. Please ensure the ID is correct.`));
+          }
+
+          let dataToFormat = eventData;
+          let userQueryContext = `details for event ${resolvedEventId}`;
+          const requestedDetail = nlpResult.entities?.detail_requested;
+
+          if (requestedDetail && eventData.hasOwnProperty(requestedDetail)) {
+            dataToFormat = { [requestedDetail]: eventData[requestedDetail] };
+            userQueryContext = `the ${requestedDetail.replace('_',' ')} for event ${resolvedEventId}`;
+          } else if (requestedDetail) {
+             // Handle cases where the requested detail isn't directly on the object or needs mapping
+            if (requestedDetail === 'location' && eventData.location_type === 'physical' && eventData.geo_address_json) {
+                 dataToFormat = { location: eventData.geo_address_json.full || eventData.geo_longitude }; // Show full address or coordinates
+                 userQueryContext = `the location for event ${resolvedEventId}`;
+            } else if (requestedDetail === 'location' && eventData.location_type === 'online') {
+                 dataToFormat = { location: 'Online' };
+                 userQueryContext = `the location for event ${resolvedEventId}`;
+            } else {
+                // Detail requested but not found / mappable
+                console.log(`Requested detail "${requestedDetail}" not found or handled for event ${resolvedEventId}`);
+                // Fallback to showing all details, but mention the request
+                userQueryContext = `details for event ${resolvedEventId} (couldn't isolate requested detail: ${requestedDetail})`;
+            }
+          }
+
+          const geminiFormattedResponse = await formatDataWithGemini(dataToFormat, userQueryContext);
+          return ctx.replyWithMarkdownV2(geminiFormattedResponse); // Already Markdown V2 escaped
+
+        } catch (error) {
+            console.error(`Error handling GET_EVENT_DETAILS intent for event ${resolvedEventId}:`, error);
+            let errorMsg = `Failed to get details for event \`${escapeMarkdownV2(resolvedEventId)}\`.`;
+            if (error.response?.status === 404) {
+                errorMsg += ' The event was not found.';
+            } else if (error.message) {
+                 errorMsg += ` Error: ${escapeMarkdownV2(error.message)}`;
+            }
+            return ctx.replyWithMarkdownV2(errorMsg);
+        }
+
+      case 'REQUIRES_CLARIFICATION':
+        // ... existing code ...
+        break;
 
       case 'UNKNOWN':
       default:
