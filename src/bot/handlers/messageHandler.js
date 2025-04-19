@@ -36,77 +36,63 @@ const messageHandler = async (ctx) => {
   const { encryptedApiKey, org } = ctx.state;
   const userText = ctx.message.text;
   const chatId = ctx.chat.id;
-  // const chatType = ctx.chat.type; // Potentially unused
-  // const userId = ctx.from?.id; // Potentially unused
 
   await ctx.replyWithChatAction('typing');
 
   try {
-    // 1. Fetch context (upcoming events)
-    let eventContext = [];
+    // 1. Fetch event IDs first
+    let eventIds = [];
     try {
       const eventsResult = await lumaClient.listEvents(encryptedApiKey, {});
       if (eventsResult?.entries) {
-        eventContext = eventsResult.entries.map(e => ({
-          api_id: e.api_id,
-          name: e.name,
-          start_at: e.start_at
-        }));
+        // Extract only the api_id from the list response
+        eventIds = eventsResult.entries.map(e => e.api_id).filter(id => !!id); // Filter out any potential null/undefined IDs
       }
-      console.log(`Fetched ${eventContext.length} events for context.`);
-    } catch (eventError) {
-      console.error("Failed to fetch event context:", eventError);
-      // Proceed without context or return an error?
-      // Let's proceed, Gemini might still answer general questions.
+      console.log(`Fetched ${eventIds.length} event IDs.`);
+    } catch (eventListError) {
+      console.error("Failed to fetch event ID list:", eventListError);
+      // Proceeding without context is problematic now as we need IDs
+      // Consider sending an error message or allowing Gemini to respond without context
+      return ctx.replyWithMarkdownV2(escapeMarkdownV2('Sorry, I couldn\'t fetch the list of events needed to understand your request.'));
     }
 
-    // Log the context object before passing it
+    // 2. Fetch full details for each event ID
+    let eventContext = [];
+    if (eventIds.length > 0) {
+      console.log(`Fetching details for ${eventIds.length} events...`);
+      const eventDetailPromises = eventIds.map(id =>
+        lumaClient.getEvent(encryptedApiKey, id).catch(err => {
+          console.error(`Failed to fetch details for event ${id}:`, err);
+          return null; // Return null if fetching details fails for one event
+        })
+      );
+      const eventDetailsResults = await Promise.all(eventDetailPromises);
+
+      // Filter out nulls and map to the required structure
+      eventContext = eventDetailsResults
+        .filter(event => event !== null) // Remove events where detail fetch failed
+        .map(e => ({
+          api_id: e.api_id,
+          name: e.name, // Should now exist
+          start_at: e.start_at // Should now exist
+          // Add other relevant fields if needed from getEvent response
+        }));
+      console.log(`Successfully fetched details for ${eventContext.length} events.`);
+    } else {
+      console.log("No event IDs found to fetch details for.");
+    }
+
+
+    // Log the context object before passing it (should now have names/dates)
     console.log('Context being passed to processNaturalLanguageQuery:', JSON.stringify({ events: eventContext }, null, 2));
 
-    // 2. Call Gemini Service for Natural Language Response
+    // 3. Call Gemini Service for Natural Language Response
     const responseText = await processNaturalLanguageQuery(userText, { events: eventContext });
 
     console.log("Raw Response from NLP Service:", responseText);
 
-    // 3. Directly reply with the response (escaping for safety)
-    // No need to check intent, errors, etc., as the NLP service handles that now
-    // and returns a user-facing string.
+    // 4. Directly reply with the response (escaping for safety)
     return ctx.replyWithMarkdownV2(escapeMarkdownV2(responseText));
-
-    // --- REMOVE ALL OLD LOGIC BELOW --- 
-    /*
-    console.log("NLP Result:", JSON.stringify(nlpResult, null, 2));
-
-    // 3. Process NLP Result (Errors and Clarifications first)
-    if (nlpResult.error) { ... }
-    if (nlpResult.intent === 'BLOCKED') { ... }
-    if (nlpResult.requires_clarification && nlpResult.clarification_prompt) { ... }
-
-    // 4. Event ID Validation/Resolution (Simplified)
-    let resolvedEventId = ...
-    const needsEvent = ...
-    if (needsEvent && !resolvedEventId) { ... }
-
-    // --- Intent Routing (using resolvedEventId from NLP) --- 
-    await ctx.replyWithChatAction('typing');
-    switch (nlpResult.intent) {
-      case 'LIST_EVENTS':
-         // ... (removed) ...
-      case 'GET_GUESTS':
-         // ... (removed) ...
-      case 'GET_GUEST_COUNT':
-         // ... (removed) ...
-      case 'APPROVE_GUEST':
-         // ... (removed) ...
-      case 'REJECT_GUEST': // Assuming typo fix from DECLINE_GUEST?
-         // ... (removed) ...
-      case 'GET_EVENT_DETAILS':
-         // ... (removed) ...
-      case 'UNKNOWN':
-      default:
-        return ctx.replyWithMarkdownV2(escapeMarkdownV2("Sorry, I didn't understand that. Can you please rephrase?"));
-    }
-    */
 
   } catch (error) {
     // General error handler for the entire process
