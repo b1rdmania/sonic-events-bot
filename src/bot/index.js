@@ -6,7 +6,10 @@ const { command: eventsCommand, handler: eventsHandler } = require('./commands/e
 const { command: guestsCommand, handler: guestsHandler } = require('./commands/guests'); // Import the guests command
 const { command: approveCommand, handler: approveHandler } = require('./commands/approve'); // Import the approve command
 const { command: rejectCommand, handler: rejectHandler } = require('./commands/reject'); // Import the reject command
-const { handler: messageHandler } = require('./handlers/messageHandler'); // Import the message handler
+// Import the specific handlers needed from messageHandler.js
+const { messageHandler, shouldRespond } = require('./handlers/messageHandler'); 
+// Import the auth middleware
+const { requireLink } = require('./middleware/auth');
 
 // Basic validation
 if (!config.telegram.botToken) {
@@ -35,8 +38,9 @@ bot.command(guestsCommand, ...guestsHandler); // Register the guests command wit
 bot.command(approveCommand, ...approveHandler); // Register the approve command
 bot.command(rejectCommand, ...rejectHandler); // Register the reject command
 
-// Register the general message handler (must come after commands)
-bot.on('text', ...messageHandler); // Use the spread operator for the array of middleware/handler
+// Register the general message handler
+// Apply middleware and the handler function individually
+bot.on('text', shouldRespond, requireLink, messageHandler); // Correctly register middleware and handler
 
 // Generic error handler
 bot.catch((err, ctx) => {
