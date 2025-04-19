@@ -7,7 +7,7 @@ if (!config.gemini.apiKey) {
 }
 
 // Initialize the Gemini client
-const genAI = new GoogleGenerativeAI({ apiKey: config.gemini.apiKey });
+const genAI = new GoogleGenerativeAI(config.gemini.apiKey);
 
 // Define safety settings
 const safetySettings = [
@@ -31,7 +31,7 @@ const safetySettings = [
 
 // Gemini model configuration
 const model = genAI.getGenerativeModel({
-  model: "gemini-1.5-pro-latest", // Use the desired model name
+  model: "gemini-2.0-flash", // Use the desired model name
   safetySettings: [
     {
       category: HarmCategory.HARM_CATEGORY_HARASSMENT,
@@ -126,7 +126,7 @@ Return ONLY a JSON object with the following structure:
   try {
     // Define the model *inside* the function
     const model = genAI.getGenerativeModel({
-        model: "gemini-1.5-pro-latest", // Or use a specific model name variable
+        model: "gemini-2.0-flash", // Or use a specific model name variable
         safetySettings: safetySettings,
         generationConfig: { responseMimeType: "application/json" }
     });
@@ -259,7 +259,7 @@ Return ONLY a JSON object with the following structure:
 async function formatDataWithGemini(data, userQueryContext = "the user's request") {
   // Define the model *inside* the function
   const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-pro-latest", // Or use a specific model name variable
+      model: "gemini-2.0-flash", // Or use a specific model name variable
       safetySettings: safetySettings
       // No generationConfig needed for text response
   });
