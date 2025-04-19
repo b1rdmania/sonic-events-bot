@@ -1,12 +1,6 @@
 const lumaClient = require('../luma/client');
 const prisma = require('../db/prisma'); // Need prisma for audit logging
-
-/** Helper to escape characters for MarkdownV2 */
-const escapeMarkdownV2 = (str) => {
-    if (!str) return '';
-    return str.replace(/\\/g, '\\\\') // must be first
-              .replace(/[_*[\]()~`>#+-=|{}.!]/g, '\\$&');
-};
+const { escapeMarkdownV2 } = require('./escapeUtil'); // Import from new util file
 
 /**
  * Fetches and formats a list of guests for a specific event using MarkdownV2.
@@ -189,5 +183,4 @@ module.exports = {
   getEventGuestCount,
   approveGuest,
   rejectGuest,
-  escapeMarkdownV2, // Export helper if needed elsewhere
 }; 

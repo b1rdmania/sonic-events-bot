@@ -1,12 +1,5 @@
 const lumaClient = require('../luma/client');
-
-/** Helper to escape characters for MarkdownV2 */
-const escapeMarkdownV2 = (str) => {
-    if (!str) return '';
-    // Order matters for escaping the escape character itself
-    return str.replace(/\\/g, '\\\\') // must be first
-              .replace(/[_*[\]()~`>#+-=|{}.!]/g, '\\$&');
-};
+const { escapeMarkdownV2 } = require('./escapeUtil');
 
 /**
  * Fetches and formats a list of events for an organization using MarkdownV2.
