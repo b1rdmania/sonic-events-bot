@@ -1,6 +1,8 @@
 // Remove previous debug logging and commented out import
 const config = require('../../config');
 const { escapeMarkdownV2 } = require('../services/escapeUtil');
+const fs = require('fs'); // Need fs to read capabilities file
+const path = require('path'); // Need path for resolving file path
 
 // --- Singleton Pattern for Gemini Instance ---
 let GoogleGenAIClass = null; // Keep class reference if needed elsewhere, though maybe not
@@ -51,102 +53,250 @@ async function getGeminiInstance() {
 }
 // --- End Singleton Pattern ---
 
-// Define safety settings (can remain global, initialized lazily) // v86 trigger
+// Define safety settings (can remain global, initialized lazily)
 let safetySettings = null;
-// Define possible intents (can remain global)
-const possibleIntents = [
-  'GET_EVENTS', // List events
-  'GET_GUESTS', // List guests for an event
-  'GET_GUEST_COUNT', // Get the count of guests for an event
-  'APPROVE_GUEST', // Approve a guest for an event
-  'DECLINE_GUEST', // Decline a guest for an event
-  'GET_EVENT_DETAILS', // Get specific details about an event
-  'REQUIRES_CLARIFICATION', // When the request is ambiguous or needs more info
-  'UNKNOWN' // When the intent cannot be determined
-];
 
-// Define example JSON outputs (can remain global)
-const exampleOutput1 = JSON.stringify({ intent: "GET_GUESTS", entities: { event_id: "[RESOLVED_ID_OF_NEXT_EVENT_FROM_CONTEXT]", status_filter: "approved" }, requires_clarification: false });
-const exampleOutput2 = JSON.stringify({ intent: "GET_EVENT_DETAILS", entities: { event_id: "evt-abc" }, requires_clarification: false });
-const exampleOutput3 = JSON.stringify({ intent: "GET_GUESTS", entities: { event_id: "evt-pL3FEVQfjNqlBBJ", status_filter: "pending_approval" }, requires_clarification: false });
-const exampleOutput4 = JSON.stringify({ intent: "GET_EVENT_DETAILS", entities: { event_id: "evt-12345" }, requires_clarification: false });
-const exampleOutput5 = JSON.stringify({ intent: "REQUIRES_CLARIFICATION", entities: { guest_email: "test@test.com" }, requires_clarification: true, clarification_prompt: "Which Dubai event are you referring to? Please provide the Event ID or a more specific name from the list." });
+// --- Read Capabilities ---
+let botCapabilities = "Bot capabilities not loaded.";
+try {
+    // Use path.join for cross-platform compatibility and correct path resolution
+    const capabilitiesPath = path.join(__dirname, '..', '..', 'BOT_CAPABILITIES.md');
+    botCapabilities = fs.readFileSync(capabilitiesPath, 'utf8');
+    // Extract relevant sections for the prompt (optional, but cleaner)
+    const capabilitiesMatch = botCapabilities.match(/## Current Capabilities \(Using Luma API\)(.*?)(##|$)/s);
+    const limitationsMatch = botCapabilities.match(/## Limitations - What the Bot CANNOT Do(.*?)(##|$)/s);
+    // Use template literals for easier string formatting
+    botCapabilities = `
+Available Actions (Tools):
+${capabilitiesMatch ? capabilitiesMatch[1].trim() : 'Refer to BOT_CAPABILITIES.md'}
+
+Limitations (What you CANNOT do):
+${limitationsMatch ? limitationsMatch[1].trim() : 'Refer to BOT_CAPABILITIES.md'}
+    `.trim();
+    console.log("Successfully loaded and parsed bot capabilities for prompts.");
+} catch (err) {
+    console.error("Error loading BOT_CAPABILITIES.md:", err);
+    // Use a fallback or handle the error appropriately
+    botCapabilities = "Error loading capabilities. Essential functions: List Events, Get Event Details, List Guests. Limitations: Cannot manage users or settings.";
+}
+// --- End Read Capabilities ---
 
 /**
- * Analyzes user input using Gemini to generate a natural language response based on Luma context.
+ * Analyzes user input using Gemini to generate a direct natural language response
+ * ONLY IF the answer is likely answerable from the provided context.
  * @param {string} text - User's natural language query.
  * @param {object} context - Additional context (e.g., { events: [...] }).
  * @returns {Promise<string>} - A promise resolving to the generated natural language response string, or an error message string.
  */
-async function processNaturalLanguageQuery(text, context = {}) {
-  try {
-    // 1. Get the singleton Gemini instance
-    const genAI = await getGeminiInstance();
-    if (!genAI) { 
-      throw new Error('Failed to retrieve Gemini AI instance.');
-    }
-
-    // Initialize safety settings lazily
-    if (!safetySettings) {
-        const { HarmCategory, HarmBlockThreshold } = await import('@google/genai');
-        safetySettings = [
-            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-        ];
-    }
-
-    // 2. Get model ID (still needed for the API call)
-    const modelId = config.gemini.modelId || "gemini-2.0-flash";
-
-    // 3. Build the event context string (Keep this part)
-    const availableEvents = context.events || [];
-    const eventContextString = availableEvents.length > 0
-      ? `Here is the list of relevant Luma events:\n${availableEvents.map(e => `- ${e.name} (ID: ${e.api_id}, Starts: ${e.start_at || 'N/A'})`).join('\n')}`
-      : "There is no specific event context available right now.";
-    console.log("Built eventContextString:", eventContextString);
-
-    // 4. Create the NEW simplified prompt
-    const simplifiedPrompt = `You are a helpful assistant managing Luma events.\n\n${eventContextString}\n\nPlease answer the following user request naturally based on the provided context. If the context doesn't contain the answer, say you don't have that information.\n\nUser Request: \"${text}\"\n\nAnswer:`;
-    console.log("Full prompt being sent to Gemini:", simplifiedPrompt);
-
-    // 5. Generate content (requesting TEXT response)
-    console.log(`Using model ${modelId}. Calling genAI.models.generateContent for natural language response...`);
-    const result = await genAI.models.generateContent({
-        model: modelId,
-        contents: [{ role: "user", parts: [{ text: simplifiedPrompt }] }],
-        safetySettings: safetySettings,
-        // NO generationConfig for responseMimeType: "application/json"
-    });
-
-    // 6. Process the TEXT response
-    const candidates = result?.candidates;
-    const responseText = candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!responseText) {
-        console.error('No valid text part found in Gemini response (natural language request):', JSON.stringify(result, null, 2));
-        const promptFeedback = result?.promptFeedback;
-        if (promptFeedback?.blockReason) {
-          console.error("Prompt blocked:", promptFeedback.blockReason);
-          return `Sorry, your request was blocked due to safety settings (${promptFeedback.blockReason}).`;
+async function generateDirectAnswerFromContext(text, context = {}) {
+    // Renamed from processNaturalLanguageQuery
+    // Implementation remains largely the same as the original processNaturalLanguageQuery
+    // It focuses on directly answering based on context.
+    try {
+        // 1. Get the singleton Gemini instance
+        const genAI = await getGeminiInstance();
+        if (!genAI) {
+            throw new Error('Failed to retrieve Gemini AI instance.');
         }
-        if (candidates && candidates.length > 0 && candidates[0].finishReason && candidates[0].finishReason !== 'STOP') {
-          console.error("Candidate finished with reason:", candidates[0].finishReason);
-          return `Sorry, the response generation stopped unexpectedly (${candidates[0].finishReason}).`;
-        }
-        // Generic error if text is still missing
-        return "Sorry, I received an empty or invalid response from the AI.";
-      }
-      
-      // Return the generated text directly
-      console.log("Generated Natural Language Response:", responseText);
-      return responseText.trim(); // Trim whitespace
 
-  } catch (error) {
-    console.error(`Error in processNaturalLanguageQuery: ${error.message}\nStack: ${error.stack}`);
-    return `Sorry, I encountered an error processing your request: ${error.message}`;
-  }
+        // Initialize safety settings lazily
+        if (!safetySettings) {
+            const { HarmCategory, HarmBlockThreshold } = await import('@google/genai');
+            safetySettings = [
+                { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+                { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+                { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+                { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+            ];
+        }
+
+        // 2. Get model ID
+        const modelId = config.gemini.modelId || "gemini-2.0-flash";
+
+        // 3. Build the event context string
+        const availableEvents = context.events || [];
+        const eventContextString = availableEvents.length > 0
+            ? `Here is the list of relevant Luma events:\n${availableEvents.map(e => `- ${e.name} (ID: ${e.api_id}, Starts: ${e.start_at || 'N/A'})`).join('\\n')}`
+            : "There is no specific event context available right now.";
+        // console.log("DirectAnswer: Built eventContextString:", eventContextString); // Optional: Add specific prefix
+
+        // 4. Create the simplified prompt for direct answers
+        const simplifiedPrompt = `You are a helpful assistant managing Luma events based *only* on the provided context.
+If the user's request can be answered directly using the context below, provide a natural language answer.
+If the context doesn't contain the answer, or if the user asks for something you know you can't do (like managing bot users), state that you don't have that information or capability based on the context.
+
+${eventContextString}
+
+User Request: "${text}"
+
+Answer:`;
+        // console.log("DirectAnswer: Full prompt being sent to Gemini:", simplifiedPrompt); // Optional: Add specific prefix
+
+        // 5. Generate content
+        // console.log(`DirectAnswer: Using model ${modelId}. Calling generateContent...`); // Optional: Add specific prefix
+        const result = await genAI.models.generateContent({
+            model: modelId,
+            contents: [{ role: "user", parts: [{ text: simplifiedPrompt }] }],
+            safetySettings: safetySettings,
+        });
+
+        // 6. Process the TEXT response (same as before)
+        const candidates = result?.candidates;
+        const responseText = candidates?.[0]?.content?.parts?.[0]?.text;
+
+        if (!responseText) {
+            console.error('DirectAnswer: No valid text part found in Gemini response:', JSON.stringify(result, null, 2));
+            const promptFeedback = result?.promptFeedback;
+            if (promptFeedback?.blockReason) {
+                console.error("DirectAnswer: Prompt blocked:", promptFeedback.blockReason);
+                return `Sorry, your request was blocked due to safety settings (${promptFeedback.blockReason}).`;
+            }
+            if (candidates && candidates.length > 0 && candidates[0].finishReason && candidates[0].finishReason !== 'STOP') {
+                console.error("DirectAnswer: Candidate finished with reason:", candidates[0].finishReason);
+                return `Sorry, the response generation stopped unexpectedly (${candidates[0].finishReason}).`;
+            }
+            return "Sorry, I received an empty or invalid response from the AI.";
+        }
+
+        // console.log("DirectAnswer: Generated Response:", responseText); // Optional: Add specific prefix
+        return responseText.trim();
+
+    } catch (error) {
+        console.error(`Error in generateDirectAnswerFromContext: ${error.message}\\nStack: ${error.stack}`);
+        return `Sorry, I encountered an error processing your request: ${error.message}`;
+    }
+}
+
+/**
+ * Determines if a user query requires calling a specific Luma API function (tool)
+ * or if it can be answered directly from context.
+ * Returns either the structured tool call info or indicates a direct answer is needed.
+ * @param {string} text - User's natural language query.
+ * @param {object} context - Additional context (e.g., { events: [...] }).
+ * @returns {Promise<{ action: 'TOOL_CALL' | 'DIRECT_ANSWER', tool?: string, params?: object, message?: string }>}
+ */
+async function determineAction(text, context = {}) {
+    try {
+        // 1. Get Gemini Instance
+        const genAI = await getGeminiInstance();
+        if (!genAI) throw new Error('Failed to retrieve Gemini AI instance for action determination.');
+
+        // Initialize safety settings if needed
+        if (!safetySettings) {
+            const { HarmCategory, HarmBlockThreshold } = await import('@google/genai');
+            safetySettings = [
+                { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+                { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+                { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+                { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+            ];
+        }
+
+        // 2. Model ID
+        const modelId = config.gemini.modelId || "gemini-2.0-flash";
+
+        // 3. Build Context String (same as direct answer function)
+        const availableEvents = context.events || [];
+        const eventContextString = availableEvents.length > 0
+            ? `Relevant Luma Events Context:\n${availableEvents.map(e => `- ${e.name} (ID: ${e.api_id}, Starts: ${e.start_at || 'N/A'})`).join('\\n')}`
+            : "No specific event context available.";
+
+        // 4. Define Available Tools (simplified description for the prompt)
+        // Note: We are NOT using the official Gemini function calling API here, just prompting it to output JSON
+        const toolsDescription = `
+You have access to the following Luma functions (tools) to get information NOT available in the context:
+
+1.  **getEvent(event_id)**: Gets *all* details for a *single* specific event. Use this if the user asks for details beyond name/date/id provided in the context.
+2.  **getGuests(event_id, [status_filter])**: Lists guests for a specific event. Optional 'status_filter' can be 'approved' or 'pending_approval'. Use this for requests about *who* is attending or their status.
+        `.trim(); // Add more tools like updateGuestStatus later
+
+        // 5. Construct the Action Determination Prompt
+        const actionPrompt = `
+You are an assistant helping manage Luma events. Analyze the User Request below, considering the provided Context and your Capabilities/Limitations.
+
+**Context:**
+${eventContextString}
+
+**Your Capabilities & Limitations:**
+${botCapabilities}
+
+**Available Tools:**
+${toolsDescription}
+
+**User Request:** "${text}"
+
+**Your Task:**
+Decide the best course of action:
+1.  **TOOL_CALL:** If the user asks for information *only* available via one of the tools (like guest lists, detailed event info not in context, or future actions like updating guest status), respond with ONLY a JSON object specifying the tool and parameters. Example formats:
+    \`\`\`json
+    {"action": "TOOL_CALL", "tool": "getGuests", "params": {"event_id": "evt-..."}}
+    \`\`\`
+    \`\`\`json
+    {"action": "TOOL_CALL", "tool": "getGuests", "params": {"event_id": "evt-...", "status_filter": "approved"}}
+    \`\`\`
+    \`\`\`json
+    {"action": "TOOL_CALL", "tool": "getEvent", "params": {"event_id": "evt-..."}}
+    \`\`\`
+    *   Ensure the \`event_id\` exists in the context if needed for a tool call. If the user refers to an event ambiguously (e.g., "the Dubai event") and the context lists multiple, ask for clarification instead (see DIRECT_ANSWER). If only one match exists in context, use its ID. If no matching event ID is found, state that.
+2.  **DIRECT_ANSWER:** If the user's request can be answered sufficiently using *only* the provided Context, OR if the request falls under your Limitations (like asking to authorize users), OR if you need to ask for clarification (e.g., which event ID to use), respond with ONLY the following JSON:
+    \`\`\`json
+    {"action": "DIRECT_ANSWER"}
+    \`\`\`
+
+**IMPORTANT:** Respond with ONLY the JSON object representing your decision. Do not add explanations or conversational text outside the JSON. Choose \`DIRECT_ANSWER\` if unsure or if the request is outside your capabilities.
+        `;
+
+        // 6. Call Gemini
+        console.log("DetermineAction: Calling Gemini to decide action...");
+        // console.log("DetermineAction: Prompt:", actionPrompt); // DEBUG: Log prompt if needed
+        const result = await genAI.models.generateContent({
+            model: modelId,
+            contents: [{ role: "user", parts: [{ text: actionPrompt }] }],
+            safetySettings: safetySettings,
+            // Force JSON output if model supports it and we can configure it here?
+            // For now, we rely on prompt instructions and parse the text response.
+        });
+
+        // 7. Parse the Response
+        const candidates = result?.candidates;
+        let responseText = candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+
+        if (!responseText) {
+            console.error('DetermineAction: No text response from Gemini for action determination:', JSON.stringify(result, null, 2));
+            // Fallback or error? Let's try a direct answer as a safe fallback.
+            return { action: 'DIRECT_ANSWER', message: 'Error determining action, attempting direct answer.' };
+        }
+
+        console.log("DetermineAction: Raw Gemini response:", responseText);
+
+        // Clean potential markdown ```json ... ```
+        responseText = responseText.replace(/^```json\s*|```$/g, '').trim();
+
+        try {
+            const decision = JSON.parse(responseText);
+            if (decision.action === 'TOOL_CALL' && decision.tool && decision.params) {
+                console.log("DetermineAction: Decided TOOL_CALL:", decision);
+                return decision; // Contains action, tool, params
+            } else if (decision.action === 'DIRECT_ANSWER') {
+                console.log("DetermineAction: Decided DIRECT_ANSWER");
+                return { action: 'DIRECT_ANSWER' };
+            } else {
+                console.error("DetermineAction: Invalid JSON structure received:", responseText);
+                return { action: 'DIRECT_ANSWER', message: 'Received invalid decision structure, attempting direct answer.' };
+            }
+        } catch (parseError) {
+            console.error("DetermineAction: Failed to parse Gemini JSON response:", parseError, "Raw response:", responseText);
+            // If parsing fails, maybe the LLM just answered directly despite instructions.
+            // Treat as direct answer? Or is it safer to error? Let's default to direct.
+            // We could potentially pass the raw text to the direct answer function in this case.
+            return { action: 'DIRECT_ANSWER', message: 'Failed to parse decision, attempting direct answer.' };
+        }
+
+    } catch (error) {
+        console.error(`Error in determineAction: ${error.message}\\nStack: ${error.stack}`);
+        // Fallback to direct answer on error
+        return { action: 'DIRECT_ANSWER', message: `Error determining action: ${error.message}` };
+    }
 }
 
 /**
@@ -250,6 +400,7 @@ Formatted Response:
 }
 
 module.exports = {
-  processNaturalLanguageQuery,
+  generateDirectAnswerFromContext, // Renamed function
+  determineAction, // New function for deciding action
   formatDataWithGemini
 }; 

@@ -1,11 +1,8 @@
-const { processNaturalLanguageQuery, formatDataWithGemini } = require('../../core/nlp/geminiService');
+const { generateDirectAnswerFromContext, determineAction, formatDataWithGemini } = require('../../core/nlp/geminiService');
 const lumaClient = require('../../core/luma/client');
 const { requireLink } = require('../middleware/auth');
 const prisma = require('../../core/db/prisma');
-const eventService = require('../../core/services/eventService');
-const guestService = require('../../core/services/guestService');
 const { escapeMarkdownV2 } = require('../../core/services/escapeUtil');
-const geminiService = require('../../core/nlp/geminiService');
 
 /**
  * Middleware to check if the bot should respond to a message.
@@ -82,27 +79,74 @@ const messageHandler = async (ctx) => {
       console.log("No event IDs found to fetch details for.");
     }
 
+    // Log the context object before passing it
+    console.log('Context being passed to Gemini service:', JSON.stringify({ events: eventContext }, null, 2));
 
-    // Log the context object before passing it (should now have names/dates)
-    console.log('Context being passed to processNaturalLanguageQuery:', JSON.stringify({ events: eventContext }, null, 2));
+    // 2. Determine the required action using Gemini
+    const actionDecision = await determineAction(userText, { events: eventContext });
+    console.log("Action Decision from Gemini:", actionDecision);
 
-    // 3. Call Gemini Service for Natural Language Response
-    const responseText = await processNaturalLanguageQuery(userText, { events: eventContext });
+    let responseText = "";
 
-    console.log("Raw Response from NLP Service:", responseText);
+    // 3. Execute based on the decision
+    if (actionDecision.action === 'TOOL_CALL' && actionDecision.tool && actionDecision.params) {
+        await ctx.replyWithChatAction('typing'); // Indicate work for tool call
+        const { tool, params } = actionDecision;
 
-    // 4. Directly reply with the response (escaping for safety)
-    return ctx.replyWithMarkdownV2(escapeMarkdownV2(responseText));
+        try {
+            let rawData = null;
+            switch (tool) {
+                case 'getGuests':
+                    if (!params.event_id) throw new Error('Missing event_id for getGuests tool call.');
+                    console.log(`Tool Call: Executing getGuests for event ${params.event_id} with filter ${params.status_filter}`);
+                    rawData = await lumaClient.getGuests(encryptedApiKey, params.event_id, {
+                        approval_status: params.status_filter // Pass filter if present
+                    });
+                    break;
+                case 'getEvent':
+                    if (!params.event_id) throw new Error('Missing event_id for getEvent tool call.');
+                    console.log(`Tool Call: Executing getEvent for event ${params.event_id}`);
+                    rawData = await lumaClient.getEvent(encryptedApiKey, params.event_id);
+                    break;
+                // Add cases for future tools like updateGuestStatus here
+                default:
+                    console.warn(`Unknown tool requested: ${tool}`);
+                    // Fallback to direct answer if tool is unknown
+                    responseText = await generateDirectAnswerFromContext(userText, { events: eventContext });
+                    break; // Exit switch
+            }
+
+            // If a tool was executed and didn't fallback, format the data
+            if (rawData !== null) {
+                 console.log(`Tool Call Result (${tool}):`, JSON.stringify(rawData, null, 2));
+                 responseText = await formatDataWithGemini(rawData, userText); // Format the data from the tool call
+            }
+
+        } catch (toolError) {
+            console.error(`Error executing tool ${tool}:`, toolError);
+            responseText = escapeMarkdownV2(`Sorry, I encountered an error while trying to perform the action '${tool}': ${toolError.message}`);
+        }
+
+    } else { // Default to DIRECT_ANSWER or if decision was malformed
+        if (actionDecision.message) {
+             console.log("Action Decision Message (defaulting to direct answer):", actionDecision.message);
+        }
+        console.log("Executing Direct Answer path...");
+        responseText = await generateDirectAnswerFromContext(userText, { events: eventContext });
+    }
+
+    console.log("Final Response Text:", responseText);
+
+    // 4. Reply with the final response text
+    return ctx.replyWithMarkdownV2(escapeMarkdownV2(responseText || "Sorry, I couldn't generate a response."));
 
   } catch (error) {
-    // General error handler for the entire process
     console.error('Error in messageHandler:', error);
-    // Send a generic error message back to the user
     return ctx.replyWithMarkdownV2(escapeMarkdownV2('Sorry, something went wrong while processing your request.'));
   }
 };
 
 module.exports = {
   messageHandler,
-  shouldRespond // Export middleware if used directly by bot setup
+  shouldRespond
 }; 
