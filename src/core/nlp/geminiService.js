@@ -344,6 +344,7 @@ Format this data into a natural language response.
 - Use MarkdownV2 for formatting (e.g., *bold*, _italic_, \`code\`, [links](url)). Remember to escape characters like '.', '-', '(', ')' with a preceding backslash where necessary.
 - Be concise. Avoid conversational filler unless the data is empty.
 - If listing items (events, guests), use bullet points or numbered lists.
+    - **Crucially, if formatting a list of guests (identified by presence of fields like 'guest_email' or 'approval_status'), explicitly state the total number of guests found in the provided data at the beginning of the response (e.g., "Found 15 guests matching the criteria:").**
 - If showing event details, highlight key information like name, date/time, and location (if available).
 - If data contains \`has_more: true\`, mention that there are more results not shown.
 - If data is empty or null, state that clearly (e.g., "No events found.", "No guests match that criteria.", "Couldn't find details for that event ID.").
