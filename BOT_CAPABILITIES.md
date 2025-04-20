@@ -15,7 +15,10 @@ The bot can currently perform the following actions based on your natural langua
 3.  **List Guests for an Event:** Fetch and display a list of registered guests for a specific event. You can often filter by status (e.g., "approved guests", "pending guests"). (Uses Luma API: `getGuests`)
 4.  **Format Information:** Present data retrieved from the Luma API (like event lists or guest lists) in a user-friendly, readable format using Markdown.
 
-*(Capabilities like guest count, approving/declining guests might be added later based on Luma API functions `getGuests` and `updateGuestStatus`)*
+## Potential Future Capabilities
+
+*   **Get Guest Count:** Provide the total number of registered guests for an event. (Based on `getGuests` data)
+*   **Approve/Decline Guest:** Update a guest's status for an event (e.g., approve a pending guest). (Uses Luma API: `updateGuestStatus`)
 
 ## Limitations - What the Bot CANNOT Do
 
@@ -46,6 +49,17 @@ The bot's actions are strictly limited to the functions available in the Luma AP
 *   "Who has registered for the Vienna Summit?" -> Bot identifies intent, calls `getGuests` for the Vienna event, formats the list.
 *   "Can you add alice@example.com to the Prague event?" -> (Future capability) Bot identifies intent, calls `addGuests`.
 *   "Can you authorize Bob to use this bot?" -> Bot responds it cannot manage user access, based on its limitations.
+
+## Authorizing the Bot (Initial Setup)
+
+To allow the bot to access your Luma data, the person setting up the bot needs to perform a one-time authorization:
+
+1.  Start a **Direct Message (DM)** chat with the bot on Telegram.
+2.  Use the command `/link`.
+3.  The bot will ask for your Luma API Key.
+4.  Paste your Luma API key directly into the DM chat.
+
+The bot will then encrypt and securely store this key, associating it with your organization or chat. This process authorizes the **bot** to act on your behalf using your Luma account; it **does not** authorize other Telegram users to use the bot. Managing *which users* can talk to the bot is handled separately through Telegram group/bot settings, not through the bot's Luma functions.
 
 ---
 *This document should be kept up-to-date as bot capabilities evolve.* 
