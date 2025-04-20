@@ -344,23 +344,8 @@ The raw data obtained from the Luma API is below (JSON format).
 
 Format this data into a natural language response for display in Telegram.
 - Respond concisely and politely. Avoid conversational filler unless the data is empty.
-- Use MarkdownV2 appropriately for readability (bolding, italics, code formatting for emails/IDs etc.). Ensure valid MarkdownV2 escaping.
-- If listing items (events, guests):
-    - **State the total count *first* (e.g., \"Okay, I found 40 guests matching that criteria:\").**
-    - Use clear bullet points.
-    - Format each guest clearly, including their name and email. Include company if available. Aim for good readability in Telegram.
-- If showing event details, highlight key information naturally.
-- If data contains 'has_more: true', mention that there are more results not shown.
-- If data is empty or null, state that clearly and politely.
-- Format dates/times clearly and naturally.
-
-Raw Data:
-\`\`\`json
-${JSON.stringify(data, null, 2)}
-\`\`\`
-
-Formatted Response:
-`;
+- Use MarkdownV2 appropriately ONLY where it significantly improves readability (e.g., bolding names or key terms, using code format for emails/IDs). Ensure valid MarkdownV2 escaping, but prioritize a clean, natural look over excessive formatting.
+- If listing items (events, guests):\n    - **State the total count *first* in a natural sentence (e.g., \"Okay, I found 40 guests matching that criteria:\").**\n    - Use clear bullet points.\n    - For each guest, present their information naturally within the bullet point. Include their **name** and **email**. Also include company/other details if available and relevant, integrating them smoothly.\n- If showing event details, describe the key information naturally rather than just listing fields.\n- If data contains 'has_more: true', mention this naturally (e.g., \"There are more results available.\").\n- If data is empty or null, state that clearly and politely.\n- Format dates/times clearly and naturally.\n\nRaw Data:\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\`\n\nFormatted Response:\n`;
 
     // 4. Generate content using genAI.models.generateContent directly
     console.log(`Using model ${modelId}. Calling genAI.models.generateContent for formatting...`);
