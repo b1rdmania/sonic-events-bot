@@ -121,9 +121,9 @@ async function generateDirectAnswerFromContext(text, context = {}) {
         // console.log("DirectAnswer: Built eventContextString:", eventContextString); // Optional: Add specific prefix
 
         // 4. Create the simplified prompt for direct answers
-        const simplifiedPrompt = `You are a helpful assistant managing Luma events based *only* on the provided context.
-If the user's request can be answered directly using the context below, provide a natural language answer.
-If the context doesn't contain the answer, or if the user asks for something you know you can't do (like managing bot users), state that you don't have that information or capability based on the context.
+        const simplifiedPrompt = `You are a helpful and efficient AI assistant managing Luma events, acting like a secretary for the user. Respond in a natural, conversational, and concise manner based *only* on the provided context.
+If the user's request can be answered directly using the context below, provide the answer clearly and politely.
+If the context doesn't contain the answer, or if the user asks for something you know you can't do (like managing bot users), politely state that you don't have that information or capability.
 
 ${eventContextString}
 
@@ -338,33 +338,15 @@ async function formatDataWithGemini(data, userQueryContext = "the user's request
 
     // 3. Build the prompt
     const prompt = `
-You are an AI assistant helping format API data into a user-friendly, concise, and readable response for Telegram.
+You are an AI assistant helping format API data into a user-friendly, natural language response suitable for Telegram. Act like a helpful secretary presenting information clearly.
 The user asked about: "${userQueryContext}"
 The raw data obtained from the Luma API is below (JSON format).
 
-Format this data into a natural language response for display in **Telegram**.
-- Use MarkdownV2 for formatting (e.g., *bold*, _italic_, \`code\`, [links](url)). Remember to escape characters like '.'.
-- Be concise. Avoid conversational filler unless the data is empty.
-- If listing items (events, guests), use bullet points or numbered lists.
-    - Crucially, if formatting a list of guests (identified by presence of fields like 'guest_email' or 'approval_status'), explicitly state the total number of guests found in the provided data at the beginning (e.g., "Found 15 guests matching the criteria:").
-    - **For guest lists in Telegram, format each guest clearly:** 
-        - Start with a bullet point (\`*\`).
-        - Show the guest's name (e.g., \`name\` field).
-        - If available, include additional info like company in parentheses (\`company_name\` field).
-        - On the **next line, indented**, show the guest's email (\`guest_email\` perhaps using code formatting: \`\`\`${guest_email}\`\`\`\`)
-- If showing event details, highlight key information like name, date/time, and location (if available).
-- If data contains \`has_more: true\`, mention that there are more results not shown.
-- If data is empty or null, state that clearly (e.g., "No events found.", "No guests match that criteria.", "Couldn't find details for that event ID.").
-- Make URLs clickable using MarkdownV2 link format. Escape URL characters if needed.
-- Format dates/times clearly (e.g., "May 20, 2024 at 10:00 AM PDT"). Assume times are in the event's timezone unless specified otherwise.
-
-Raw Data:
-\`\`\`json
-${JSON.stringify(data, null, 2)}
-\`\`\`
-
-Formatted Response:
-`;
+Format this data into a natural language response for display in Telegram.
+- Respond concisely and politely. Avoid conversational filler unless the data is empty.
+- Use MarkdownV2 *appropriately* for readability (e.g., *bold* names, _italic_ emphasis, \\\`code\\\` for IDs/emails if helpful, [links](url)). Remember to escape characters like \'.\', \'-\', \'(\', \')\' with a preceding backslash for valid MarkdownV2.
+- If listing items (events, guests):\n    - Use clear bullet points (e.g., \\\`*\\\`).\n    - If formatting a guest list, state the total count first (e.g., \"Found 15 guests:\").\n    - For each guest, clearly include their name (\\\`name\\\`) and email (\\\`guest_email\\\`). Include other details like company (\\\`company_name\\\`) if available and relevant. Let the AI decide the best natural way to present this per guest, aiming for clarity over rigid structure.\n- If showing event details, highlight key information naturally.\n- If data contains \\\`has_more: true\\\`, mention that there are more results not shown.\n- If data is empty or null, state that clearly and politely (e.g., \"I couldn't find any guests matching that criteria.\", \"I don't have details for that event ID.\").\n- Format dates/times clearly and naturally (e.g., \"May 20, 2024 at 10:00 AM PDT\").\n
+Raw Data:\n\\\`\\\`\\\`json\n${JSON.stringify(data, null, 2)}\n\\\`\\\`\\\`\n\nFormatted Response:\n`;
 
     // 4. Generate content using genAI.models.generateContent directly
     console.log(`Using model ${modelId}. Calling genAI.models.generateContent for formatting...`);
