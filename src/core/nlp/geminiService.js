@@ -266,13 +266,12 @@ Decide the best course of action:
         const candidates = result?.candidates;
         let responseText = candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
+        // *** ADD RAW RESPONSE LOGGING HERE ***
+        console.log("DetermineAction: Raw Gemini response text:", responseText); // Log before cleaning/parsing
         if (!responseText) {
             console.error('DetermineAction: No text response from Gemini for action determination:', JSON.stringify(result, null, 2));
-            // Fallback or error? Let's try a direct answer as a safe fallback.
             return { action: 'DIRECT_ANSWER', message: 'Error determining action, attempting direct answer.' };
         }
-
-        console.log("DetermineAction: Raw Gemini response:", responseText);
 
         // Clean potential markdown ```json ... ```
         responseText = responseText.replace(/^```json\s*|```$/g, '').trim();
@@ -290,10 +289,8 @@ Decide the best course of action:
                 return { action: 'DIRECT_ANSWER', message: 'Received invalid decision structure, attempting direct answer.' };
             }
         } catch (parseError) {
-            console.error("DetermineAction: Failed to parse Gemini JSON response:", parseError, "Raw response:", responseText);
-            // If parsing fails, maybe the LLM just answered directly despite instructions.
-            // Treat as direct answer? Or is it safer to error? Let's default to direct.
-            // We could potentially pass the raw text to the direct answer function in this case.
+            // Log the raw text again in case of parse error
+            console.error("DetermineAction: Failed to parse Gemini JSON response:", parseError, "Raw response after cleaning:", responseText);
             return { action: 'DIRECT_ANSWER', message: 'Failed to parse decision, attempting direct answer.' };
         }
 
@@ -345,11 +342,16 @@ You are an AI assistant helping format API data into a user-friendly, concise, a
 The user asked about: "${userQueryContext}"
 The raw data obtained from the Luma API is below (JSON format).
 
-Format this data into a natural language response.
-- Use MarkdownV2 for formatting (e.g., *bold*, _italic_, \`code\`, [links](url)). Remember to escape characters like '.', '-', '(', ')' with a preceding backslash where necessary.
+Format this data into a natural language response for display in **Telegram**.
+- Use MarkdownV2 for formatting (e.g., *bold*, _italic_, \`code\`, [links](url)). Remember to escape characters like '.'.
 - Be concise. Avoid conversational filler unless the data is empty.
 - If listing items (events, guests), use bullet points or numbered lists.
-    - **Crucially, if formatting a list of guests (identified by presence of fields like 'guest_email' or 'approval_status'), explicitly state the total number of guests found in the provided data at the beginning of the response (e.g., "Found 15 guests matching the criteria:").**
+    - Crucially, if formatting a list of guests (identified by presence of fields like 'guest_email' or 'approval_status'), explicitly state the total number of guests found in the provided data at the beginning (e.g., "Found 15 guests matching the criteria:").
+    - **For guest lists in Telegram, format each guest clearly:** 
+        - Start with a bullet point (\`*\`).
+        - Show the guest's name (e.g., \`name\` field).
+        - If available, include additional info like company in parentheses (\`company_name\` field).
+        - On the **next line, indented**, show the guest's email (\`guest_email\` perhaps using code formatting: \`\`\`${guest_email}\`\`\`\`)
 - If showing event details, highlight key information like name, date/time, and location (if available).
 - If data contains \`has_more: true\`, mention that there are more results not shown.
 - If data is empty or null, state that clearly (e.g., "No events found.", "No guests match that criteria.", "Couldn't find details for that event ID.").

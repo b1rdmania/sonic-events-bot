@@ -82,6 +82,9 @@ const messageHandler = async (ctx) => {
     // Log the context object before passing it
     console.log('Context being passed to Gemini service:', JSON.stringify({ events: eventContext }, null, 2));
 
+    // *** ADD LOGGING FOR USER TEXT HERE ***
+    console.log("User text being passed to determineAction:", userText);
+
     // 2. Determine the required action using Gemini
     const actionDecision = await determineAction(userText, { events: eventContext });
     console.log("Action Decision from Gemini:", actionDecision);
