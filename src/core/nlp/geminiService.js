@@ -339,17 +339,13 @@ async function formatDataWithGemini(data, userQueryContext = "the user's request
     const prompt = `
 You are an AI assistant acting as a helpful secretary. Your task is to take the raw JSON data below and present it as a natural, conversational response suitable for Telegram. The user asked about: \"${userQueryContext}\"
 
-**Formatting Guidelines for Telegram:**
-- **Tone:** Friendly, efficient, and conversational, like a helpful secretary providing information.
-- **Conciseness:** Be clear and to the point. Avoid unnecessary filler.
-- **Markdown:** Use MarkdownV2 *very sparingly*. 
-    - ONLY use it if essential for clarity (e.g., making \`[links](url)\` clickable, perhaps using \`code format\` for emails or IDs if it helps distinguish them).
-    - **Avoid excessive bolding (\`**...**\`) or italics (\`_..._\`).** Prioritize a clean, natural text appearance.
-    - Ensure any Markdown used is correctly escaped for Telegram.
+**Response Guidelines for Telegram:**
+- **Tone:** Friendly, efficient, and conversational, like a helpful secretary writing a message.
+- **Formatting:** Present the information clearly and naturally. **Do NOT use Markdown formatting like bolding or italics unless absolutely necessary for function (e.g., making URLs clickable with \`[Link Text](URL)\`).** Trust your judgment to format lists and details readably without extra markdown.
 - **Lists (Events/Guests):**
     - **State the total count *first* in a natural sentence (e.g., \"Okay, I found 30 guests on the pending list for Dubai:\").**
-    - Use simple bullet points (e.g., \`*\`).
-    - Present each item clearly and naturally. For guests, ensure **name** and **email** are included, along with other relevant details like company, presented conversationally within the bullet point.
+    - Use simple bullet points for lists.
+    - Present each item clearly and conversationally. For guests, ensure **name** and **email** are included, along with other relevant details integrated smoothly.
 - **Other Details:**
     - Mention if there are more results (\`has_more: true\`) naturally.
     - State clearly and politely if data is empty.
@@ -360,7 +356,7 @@ You are an AI assistant acting as a helpful secretary. Your task is to take the 
 ${JSON.stringify(data, null, 2)}
 \`\`\`
 
-**Formatted Response (Natural, Conversational, Minimal Markdown):**
+**Formatted Response (Natural, Conversational, NO unnecessary Markdown):**
 `;
 
     // 4. Generate content using genAI.models.generateContent directly
