@@ -95,12 +95,14 @@ const messageHandler = async (ctx) => {
 
         try {
             let rawData = null;
+            let actionResultText = null; // For actions that don't return data to format
+
             switch (tool) {
                 case 'getGuests':
                     if (!params.event_id) throw new Error('Missing event_id for getGuests tool call.');
                     console.log(`Tool Call: Executing getGuests for event ${params.event_id} with filter ${params.status_filter}`);
                     rawData = await lumaClient.getGuests(encryptedApiKey, params.event_id, {
-                        approval_status: params.status_filter // Pass filter if present
+                        approval_status: params.status_filter
                     });
                     break;
                 case 'getEvent':
@@ -108,26 +110,45 @@ const messageHandler = async (ctx) => {
                     console.log(`Tool Call: Executing getEvent for event ${params.event_id}`);
                     rawData = await lumaClient.getEvent(encryptedApiKey, params.event_id);
                     break;
-                // Add cases for future tools like updateGuestStatus here
+                case 'updateGuestStatus':
+                    if (!params.event_id || !params.guest_email || !params.new_status) {
+                        throw new Error('Missing required parameters (event_id, guest_email, new_status) for updateGuestStatus tool call.');
+                    }
+                    if (params.new_status !== 'approved' && params.new_status !== 'declined') {
+                        throw new Error(`Invalid new_status '${params.new_status}'. Must be 'approved' or 'declined'.`);
+                    }
+                    console.log(`Tool Call: Executing updateGuestStatus for event ${params.event_id}, guest ${params.guest_email} to ${params.new_status}`);
+                    // We might want to add should_refund handling later if needed
+                    const updateResult = await lumaClient.updateGuestStatus(encryptedApiKey, params.event_id, params.guest_email, params.new_status);
+                    console.log("updateGuestStatus API Result:", updateResult);
+                    // Generate a simple text response for success
+                    actionResultText = `Successfully updated status for guest ${params.guest_email} to ${params.new_status} for event ${params.event_id}.`;
+                    break;
                 default:
                     console.warn(`Unknown tool requested: ${tool}`);
-                    // Fallback to direct answer if tool is unknown
                     responseText = await generateDirectAnswerFromContext(userText, { events: eventContext });
-                    break; // Exit switch
+                    // Ensure we don't try to format data below if we fell back here
+                    rawData = null;
+                    actionResultText = responseText;
+                    break;
             }
 
-            // If a tool was executed and didn't fallback, format the data
+            // If a tool returned data (getGuests/getEvent), format it
             if (rawData !== null) {
                  console.log(`Tool Call Result (${tool}):`, JSON.stringify(rawData, null, 2));
-                 responseText = await formatDataWithGemini(rawData, userText); // Format the data from the tool call
+                 responseText = await formatDataWithGemini(rawData, userText);
+            } else if (actionResultText !== null) {
+                // If a tool returned a simple text result (updateGuestStatus)
+                responseText = actionResultText;
             }
+            // If responseText is still empty here, something went wrong or fallback occurred
 
         } catch (toolError) {
             console.error(`Error executing tool ${tool}:`, toolError);
             responseText = escapeMarkdownV2(`Sorry, I encountered an error while trying to perform the action '${tool}': ${toolError.message}`);
         }
 
-    } else { // Default to DIRECT_ANSWER or if decision was malformed
+    } else { // Default to DIRECT_ANSWER
         if (actionDecision.message) {
              console.log("Action Decision Message (defaulting to direct answer):", actionDecision.message);
         }

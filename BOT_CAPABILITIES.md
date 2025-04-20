@@ -12,13 +12,14 @@ The bot can currently perform the following actions based on your natural langua
 
 1.  **List Upcoming Events:** Provide a summary of upcoming events, including their Name, Luma Event ID, and Start Time. (Uses Luma API: `listEvents` + `getEvent`)
 2.  **Get Specific Event Details:** Retrieve and display detailed information about a single event when asked about it by name or ID. (Uses Luma API: `getEvent`)
-3.  **List Guests for an Event:** Fetch and display a list of registered guests for a specific event. You can often filter by status (e.g., "approved guests", "pending guests"). (Uses Luma API: `getGuests`)
-4.  **Format Information:** Present data retrieved from the Luma API (like event lists or guest lists) in a user-friendly, readable format using Markdown.
+3.  **List Guests for an Event:** Fetch and display a list of registered guests for a specific event. You can often filter by status (e.g., "approved guests", "pending guests"). Includes guest count. (Uses Luma API: `getGuests`)
+4.  **Approve Guest:** Change a guest's status to 'approved' for a specific event. You typically need to provide the guest's email address. (Uses Luma API: `updateGuestStatus`)
+5.  **Decline Guest:** Change a guest's status to 'declined' for a specific event. You typically need to provide the guest's email address. (Uses Luma API: `updateGuestStatus`)
+6.  **Format Information:** Present data retrieved from the Luma API (like event lists or guest lists) in a user-friendly, readable format using Markdown.
 
 ## Potential Future Capabilities
 
 *   **Get Guest Count:** Provide the total number of registered guests for an event. (Based on `getGuests` data)
-*   **Approve/Decline Guest:** Update a guest's status for an event (e.g., approve a pending guest). (Uses Luma API: `updateGuestStatus`)
 
 ## Limitations - What the Bot CANNOT Do
 

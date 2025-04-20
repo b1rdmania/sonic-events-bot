@@ -202,13 +202,13 @@ async function determineAction(text, context = {}) {
             : "No specific event context available.";
 
         // 4. Define Available Tools (simplified description for the prompt)
-        // Note: We are NOT using the official Gemini function calling API here, just prompting it to output JSON
         const toolsDescription = `
-You have access to the following Luma functions (tools) to get information NOT available in the context:
+You have access to the following Luma functions (tools) to get information OR take actions:
 
 1.  **getEvent(event_id)**: Gets *all* details for a *single* specific event. Use this if the user asks for details beyond name/date/id provided in the context.
 2.  **getGuests(event_id, [status_filter])**: Lists guests for a specific event. Optional 'status_filter' can be 'approved' or 'pending_approval'. Use this for requests about *who* is attending or their status.
-        `.trim(); // Add more tools like updateGuestStatus later
+3.  **updateGuestStatus(event_id, guest_email, new_status)**: Updates a specific guest's status. Requires the event ID and the guest's email. 'new_status' must be either 'approved' or 'declined'.
+        `.trim();
 
         // 5. Construct the Action Determination Prompt
         const actionPrompt = `
@@ -227,23 +227,28 @@ ${toolsDescription}
 
 **Your Task:**
 Decide the best course of action:
-1.  **TOOL_CALL:** If the user asks for information *only* available via one of the tools (like guest lists, detailed event info not in context, or future actions like updating guest status), respond with ONLY a JSON object specifying the tool and parameters. Example formats:
-    \`\`\`json
-    {"action": "TOOL_CALL", "tool": "getGuests", "params": {"event_id": "evt-..."}}
-    \`\`\`
-    \`\`\`json
-    {"action": "TOOL_CALL", "tool": "getGuests", "params": {"event_id": "evt-...", "status_filter": "approved"}}
-    \`\`\`
-    \`\`\`json
-    {"action": "TOOL_CALL", "tool": "getEvent", "params": {"event_id": "evt-..."}}
-    \`\`\`
-    *   Ensure the \`event_id\` exists in the context if needed for a tool call. If the user refers to an event ambiguously (e.g., "the Dubai event") and the context lists multiple, ask for clarification instead (see DIRECT_ANSWER). If only one match exists in context, use its ID. If no matching event ID is found, state that.
-2.  **DIRECT_ANSWER:** If the user's request can be answered sufficiently using *only* the provided Context, OR if the request falls under your Limitations (like asking to authorize users), OR if you need to ask for clarification (e.g., which event ID to use), respond with ONLY the following JSON:
-    \`\`\`json
-    {"action": "DIRECT_ANSWER"}
-    \`\`\`
+1.  **TOOL_CALL:** If the user asks for information or to perform an action *only* available via one of the tools (like guest lists, detailed event info, approving/declining guests), respond with ONLY a JSON object specifying the tool and parameters. 
+    *   For \`updateGuestStatus\`, you MUST extract the \`guest_email\`. If the email is missing, ask for it via DIRECT_ANSWER.
+    *   Example formats:
+        \`\`\`json
+        {"action": "TOOL_CALL", "tool": "getGuests", "params": {"event_id": "evt-..."}}
+        \`\`\`
+        \`\`\`json
+        {"action": "TOOL_CALL", "tool": "getGuests", "params": {"event_id": "evt-...", "status_filter": "pending_approval"}}
+        \`\`\`
+        \`\`\`json
+        {"action": "TOOL_CALL", "tool": "getEvent", "params": {"event_id": "evt-..."}}
+        \`\`\`
+        \`\`\`json
+        {"action": "TOOL_CALL", "tool": "updateGuestStatus", "params": {"event_id": "evt-...", "guest_email": "user@example.com", "new_status": "approved"}}
+        \`\`\`
+        \`\`\`json
+        {"action": "TOOL_CALL", "tool": "updateGuestStatus", "params": {"event_id": "evt-...", "guest_email": "user@example.com", "new_status": "declined"}}
+        \`\`\`
+    *   Ensure the \`event_id\` exists in the context if needed for a tool call. Resolve ambiguous event references (e.g., "the Dubai event") to a specific ID from the context if possible. If ambiguous or not found, use DIRECT_ANSWER to ask for clarification or state it's not found.
+2.  **DIRECT_ANSWER:** If the request can be answered from Context, is a Limitation, requires clarification (missing email, ambiguous event), or is unclear, respond with ONLY: \`{"action": "DIRECT_ANSWER"}\`
 
-**IMPORTANT:** Respond with ONLY the JSON object representing your decision. Do not add explanations or conversational text outside the JSON. Choose \`DIRECT_ANSWER\` if unsure or if the request is outside your capabilities.
+**IMPORTANT:** Respond with ONLY the JSON object. Do not add explanations outside the JSON. Choose \`DIRECT_ANSWER\` if unsure or if the request is outside your capabilities.
         `;
 
         // 6. Call Gemini
