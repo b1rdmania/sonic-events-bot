@@ -1,3 +1,7 @@
+// DEVELOPMENT PHILOSOPHY: Prioritize refining prompts over hardcoding logic.
+// Aim for natural language interaction by leveraging LLM understanding.
+// See BOT_CAPABILITIES.md for more details.
+
 // Remove previous debug logging and commented out import
 const config = require('../../config');
 const { escapeMarkdownV2 } = require('../services/escapeUtil');
@@ -121,15 +125,7 @@ async function generateDirectAnswerFromContext(text, context = {}) {
         // console.log("DirectAnswer: Built eventContextString:", eventContextString); // Optional: Add specific prefix
 
         // 4. Create the simplified prompt for direct answers
-        const simplifiedPrompt = `You are a helpful and efficient AI assistant managing Luma events, acting like a secretary for the user. Respond in a natural, conversational, and concise manner based *only* on the provided context.
-If the user's request can be answered directly using the context below, provide the answer clearly and politely.
-If the context doesn't contain the answer, or if the user asks for something you know you can't do (like managing bot users), politely state that you don't have that information or capability.
-
-${eventContextString}
-
-User Request: "${text}"
-
-Answer:`;
+        const simplifiedPrompt = `You are a helpful and efficient AI assistant managing Luma events, acting like a secretary for the user. Respond in a natural, conversational, and concise manner based *only* on the provided context.\nIf the user's request can be answered directly using the context below, provide the answer clearly and politely.\nIf the user asks for an action (like approving a guest) but provides incomplete information (e.g., missing the guest email), ask a clarifying question to get the missing details.\nIf the context doesn't contain the answer, or if the user asks for something you know you can't do (like managing bot users), politely state that you don't have that information or capability.\n\n${eventContextString}\n\nUser Request: \"${text}\"\n\nAnswer:`;
         // console.log("DirectAnswer: Full prompt being sent to Gemini:", simplifiedPrompt); // Optional: Add specific prefix
 
         // 5. Generate content
@@ -227,8 +223,7 @@ ${toolsDescription}
 
 **Your Task:**
 Decide the best course of action:
-1.  **TOOL_CALL:** If the user asks for information or to perform an action *only* available via one of the tools (like guest lists, detailed event info, approving/declining guests), respond with ONLY a JSON object specifying the tool and parameters. 
-    *   For \`updateGuestStatus\`, you MUST extract the \`guest_email\`. If the email is missing, ask for it via DIRECT_ANSWER.
+1.  **TOOL_CALL:** If the user asks for information or to perform an action *only* available via one of the tools AND you can reliably extract all necessary parameters (like event_id, guest_email), respond with ONLY a JSON object specifying the tool and parameters.
     *   Example formats:
         \`\`\`json
         {"action": "TOOL_CALL", "tool": "getGuests", "params": {"event_id": "evt-..."}}
@@ -245,10 +240,14 @@ Decide the best course of action:
         \`\`\`json
         {"action": "TOOL_CALL", "tool": "updateGuestStatus", "params": {"event_id": "evt-...", "guest_email": "user@example.com", "new_status": "declined"}}
         \`\`\`
-    *   Ensure the \`event_id\` exists in the context if needed for a tool call. Resolve ambiguous event references (e.g., "the Dubai event") to a specific ID from the context if possible. If ambiguous or not found, use DIRECT_ANSWER to ask for clarification or state it's not found.
-2.  **DIRECT_ANSWER:** If the request can be answered from Context, is a Limitation, requires clarification (missing email, ambiguous event), or is unclear, respond with ONLY: \`{"action": "DIRECT_ANSWER"}\`
+    *   Ensure \`event_id\` exists in the context. Resolve ambiguous event references if possible. If ambiguous or not found, use DIRECT_ANSWER.
+2.  **DIRECT_ANSWER:** Respond with ONLY \`{\"action\": \"DIRECT_ANSWER\"}\` IF:
+    *   The request can be answered sufficiently using *only* the provided Context.
+    *   The request falls under your Limitations (like asking to authorize users).
+    *   The request requires clarification (e.g., ambiguous event reference, missing required parameter like **guest_email** for updateGuestStatus).
+    *   The intent is unclear or the request is outside your capabilities.
 
-**IMPORTANT:** Respond with ONLY the JSON object. Do not add explanations outside the JSON. Choose \`DIRECT_ANSWER\` if unsure or if the request is outside your capabilities.
+**IMPORTANT:** Respond with ONLY the JSON object. If you choose DIRECT_ANSWER because clarification is needed (like a missing email), the separate direct answer generation step will handle asking the user for the missing information based on the context.
         `;
 
         // 6. Call Gemini

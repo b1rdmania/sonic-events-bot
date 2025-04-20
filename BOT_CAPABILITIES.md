@@ -1,6 +1,14 @@
 # Sonic World Events Bot - Capabilities and Limitations
 
-This document outlines the features and boundaries of the Sonic World Events Telegram Bot.
+## Development Philosophy: Prompt Refinement First
+
+This bot prioritizes using natural language understanding and generation via Google Gemini. When adding features or improving interactions:
+
+*   **Refine Prompts:** The primary approach is to refine the prompts given to the LLM to elicit the desired behavior, understanding, or response format.
+*   **Avoid Hardcoding:** We aim to minimize hardcoded logic or complex state management for conversational flow, relying instead on the LLM's ability to understand context and instructions.
+*   **Minimize Prescriptive Formatting:** Instructions, especially for output formatting, should guide the LLM towards clarity and naturalness rather than enforcing rigid, specific markdown structures.
+
+This approach aims for flexibility and a more natural user experience.
 
 ## Core Purpose
 
