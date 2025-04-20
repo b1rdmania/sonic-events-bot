@@ -338,15 +338,29 @@ async function formatDataWithGemini(data, userQueryContext = "the user's request
 
     // 3. Build the prompt
     const prompt = `
-You are an AI assistant helping format API data into a user-friendly, natural language response suitable for Telegram. Act like a helpful secretary presenting information clearly.
-The user asked about: "${userQueryContext}"
+You are an AI assistant helping format API data into a user-friendly, natural language response suitable for Telegram. Act like a helpful secretary presenting information clearly and concisely.
+The user asked about: \"${userQueryContext}\"
 The raw data obtained from the Luma API is below (JSON format).
 
 Format this data into a natural language response for display in Telegram.
 - Respond concisely and politely. Avoid conversational filler unless the data is empty.
-- Use MarkdownV2 *appropriately* for readability (e.g., *bold* names, _italic_ emphasis, \\\`code\\\` for IDs/emails if helpful, [links](url)). Remember to escape characters like \'.\', \'-\', \'(\', \')\' with a preceding backslash for valid MarkdownV2.
-- If listing items (events, guests):\n    - Use clear bullet points (e.g., \\\`*\\\`).\n    - If formatting a guest list, state the total count first (e.g., \"Found 15 guests:\").\n    - For each guest, clearly include their name (\\\`name\\\`) and email (\\\`guest_email\\\`). Include other details like company (\\\`company_name\\\`) if available and relevant. Let the AI decide the best natural way to present this per guest, aiming for clarity over rigid structure.\n- If showing event details, highlight key information naturally.\n- If data contains \\\`has_more: true\\\`, mention that there are more results not shown.\n- If data is empty or null, state that clearly and politely (e.g., \"I couldn't find any guests matching that criteria.\", \"I don't have details for that event ID.\").\n- Format dates/times clearly and naturally (e.g., \"May 20, 2024 at 10:00 AM PDT\").\n
-Raw Data:\n\\\`\\\`\\\`json\n${JSON.stringify(data, null, 2)}\n\\\`\\\`\\\`\n\nFormatted Response:\n`;
+- Use MarkdownV2 appropriately for readability (bolding, italics, code formatting for emails/IDs etc.). Ensure valid MarkdownV2 escaping.
+- If listing items (events, guests):
+    - **State the total count *first* (e.g., \"Okay, I found 40 guests matching that criteria:\").**
+    - Use clear bullet points.
+    - Format each guest clearly, including their name and email. Include company if available. Aim for good readability in Telegram.
+- If showing event details, highlight key information naturally.
+- If data contains 'has_more: true', mention that there are more results not shown.
+- If data is empty or null, state that clearly and politely.
+- Format dates/times clearly and naturally.
+
+Raw Data:
+\`\`\`json
+${JSON.stringify(data, null, 2)}
+\`\`\`
+
+Formatted Response:
+`;
 
     // 4. Generate content using genAI.models.generateContent directly
     console.log(`Using model ${modelId}. Calling genAI.models.generateContent for formatting...`);
