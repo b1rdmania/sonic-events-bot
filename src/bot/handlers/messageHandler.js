@@ -1,4 +1,4 @@
-const { generateDirectAnswerFromContext, determineAction, formatDataWithGemini } = require('../../core/nlp/geminiService');
+const { generateDirectAnswerFromContext, determineAction, formatDataWithGemini, postProcessResponse } = require('../../core/nlp/geminiService');
 const lumaClient = require('../../core/luma/client');
 const { requireLink } = require('../middleware/auth');
 const prisma = require('../../core/db/prisma');
@@ -75,7 +75,7 @@ const messageHandler = async (ctx) => {
           // Add other relevant fields if needed from getEvent response
         }));
       console.log(`Successfully fetched details for ${eventContext.length} events.`);
-    } else {
+        } else {
       console.log("No event IDs found to fetch details for.");
     }
 
@@ -89,7 +89,7 @@ const messageHandler = async (ctx) => {
     const actionDecision = await determineAction(userText, { events: eventContext });
     console.log("Action Decision from Gemini:", actionDecision);
 
-    let responseText = "";
+    let initialResponseText = "";
 
     // 3. Execute based on the decision
     if (actionDecision.action === 'TOOL_CALL' && actionDecision.tool && actionDecision.params) {
@@ -129,26 +129,26 @@ const messageHandler = async (ctx) => {
                     break;
                 default:
                     console.warn(`Unknown tool requested: ${tool}`);
-                    responseText = await generateDirectAnswerFromContext(userText, { events: eventContext });
+                    initialResponseText = await generateDirectAnswerFromContext(userText, { events: eventContext });
                     // Ensure we don't try to format data below if we fell back here
                     rawData = null;
-                    actionResultText = responseText;
+                    actionResultText = initialResponseText;
                     break;
             }
 
             // If a tool returned data (getGuests/getEvent), format it
             if (rawData !== null) {
                  console.log(`Tool Call Result (${tool}):`, JSON.stringify(rawData, null, 2));
-                 responseText = await formatDataWithGemini(rawData, userText);
+                 initialResponseText = await formatDataWithGemini(rawData, userText);
             } else if (actionResultText !== null) {
                 // If a tool returned a simple text result (updateGuestStatus)
-                responseText = actionResultText;
+                initialResponseText = actionResultText;
             }
-            // If responseText is still empty here, something went wrong or fallback occurred
+            // If initialResponseText is still empty here, something went wrong or fallback occurred
 
         } catch (toolError) {
             console.error(`Error executing tool ${tool}:`, toolError);
-            responseText = escapeMarkdownV2(`Sorry, I encountered an error while trying to perform the action '${tool}': ${toolError.message}`);
+            initialResponseText = escapeMarkdownV2(`Sorry, I encountered an error while trying to perform the action '${tool}': ${toolError.message}`);
         }
 
     } else { // Default to DIRECT_ANSWER
@@ -156,13 +156,18 @@ const messageHandler = async (ctx) => {
              console.log("Action Decision Message (defaulting to direct answer):", actionDecision.message);
         }
         console.log("Executing Direct Answer path...");
-        responseText = await generateDirectAnswerFromContext(userText, { events: eventContext });
+        initialResponseText = await generateDirectAnswerFromContext(userText, { events: eventContext });
     }
 
-    console.log("Final Response Text:", responseText);
+    console.log("Initial Response Text (Pre-Processing):", initialResponseText);
 
-    // 4. Reply with the final response text
-    return ctx.replyWithMarkdownV2(escapeMarkdownV2(responseText || "Sorry, I couldn't generate a response."));
+    // 4. Post-process the response for cleanup and natural tone
+    const finalResponseText = await postProcessResponse(initialResponseText);
+    console.log("Final Response Text (Post-Processing):", finalResponseText);
+
+    // 5. Reply with the final, processed response text
+    // Ensure fallback text if finalResponseText is somehow empty
+    return ctx.replyWithMarkdownV2(escapeMarkdownV2(finalResponseText || "Sorry, I couldn't generate a response."));
 
   } catch (error) {
     console.error('Error in messageHandler:', error);
