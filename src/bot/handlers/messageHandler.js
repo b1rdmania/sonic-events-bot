@@ -1,4 +1,4 @@
-const { generateDirectAnswerFromContext, determineAction, formatDataWithGemini, postProcessResponse } = require('../../core/nlp/geminiService');
+const { resolveQuery, formatDataWithGemini, postProcessResponse } = require('../../core/nlp/geminiService');
 const lumaClient = require('../../core/luma/client');
 const { requireLink } = require('../middleware/auth');
 const prisma = require('../../core/db/prisma');
@@ -37,76 +37,62 @@ const messageHandler = async (ctx) => {
   await ctx.replyWithChatAction('typing');
 
   try {
-    // 1. Fetch event IDs first
+    // 1. Fetch event context (IDs and then details - unchanged)
+    let eventContext = [];
     let eventIds = [];
     try {
       const eventsResult = await lumaClient.listEvents(encryptedApiKey, {});
       if (eventsResult?.entries) {
-        // Extract only the api_id from the list response
-        eventIds = eventsResult.entries.map(e => e.api_id).filter(id => !!id); // Filter out any potential null/undefined IDs
+        eventIds = eventsResult.entries.map(e => e.api_id).filter(id => !!id);
       }
       console.log(`Fetched ${eventIds.length} event IDs.`);
     } catch (eventListError) {
       console.error("Failed to fetch event ID list:", eventListError);
-      // Proceeding without context is problematic now as we need IDs
-      // Consider sending an error message or allowing Gemini to respond without context
       return ctx.replyWithMarkdownV2(escapeMarkdownV2('Sorry, I couldn\'t fetch the list of events needed to understand your request.'));
     }
-
-    // 2. Fetch full details for each event ID
-    let eventContext = [];
     if (eventIds.length > 0) {
       console.log(`Fetching details for ${eventIds.length} events...`);
       const eventDetailPromises = eventIds.map(id =>
         lumaClient.getEvent(encryptedApiKey, id).catch(err => {
           console.error(`Failed to fetch details for event ${id}:`, err);
-          return null; // Return null if fetching details fails for one event
+          return null;
         })
       );
       const eventDetailsResults = await Promise.all(eventDetailPromises);
-
-      // Filter out nulls and map to the required structure
       eventContext = eventDetailsResults
-        .filter(event => event !== null) // Remove events where detail fetch failed
+        .filter(event => event !== null)
         .map(e => ({
           api_id: e.api_id,
-          name: e.name, // Should now exist
-          start_at: e.start_at // Should now exist
-          // Add other relevant fields if needed from getEvent response
+          name: e.name,
+          start_at: e.start_at
         }));
       console.log(`Successfully fetched details for ${eventContext.length} events.`);
-        } else {
+    } else {
       console.log("No event IDs found to fetch details for.");
     }
-
-    // Log the context object before passing it
     console.log('Context being passed to Gemini service:', JSON.stringify({ events: eventContext }, null, 2));
+    console.log("User text being passed to resolveQuery:", userText);
 
-    // *** ADD LOGGING FOR USER TEXT HERE ***
-    console.log("User text being passed to determineAction:", userText);
+    // 2. Call the primary resolver function
+    const resolveResult = await resolveQuery(userText, { events: eventContext });
 
-    // 2. Determine the required action using Gemini
-    const actionDecision = await determineAction(userText, { events: eventContext });
-    console.log("Action Decision from Gemini:", actionDecision);
+    let rawResponseText = ""; // Text before post-processing
 
-    let initialResponseText = "";
-
-    // 3. Execute based on the decision
-    if (actionDecision.action === 'TOOL_CALL' && actionDecision.tool && actionDecision.params) {
-        await ctx.replyWithChatAction('typing'); // Indicate work for tool call
-        const { tool, params } = actionDecision;
+    // 3. Check if it's a tool call or direct answer
+    if (typeof resolveResult === 'object' && resolveResult.action === 'TOOL_CALL') {
+        console.log("Handler: Received TOOL_CALL instruction:", resolveResult);
+        await ctx.replyWithChatAction('typing');
+        const { tool, params } = resolveResult;
 
         try {
             let rawData = null;
-            let actionResultText = null; // For actions that don't return data to format
+            let actionResultText = null;
 
             switch (tool) {
                 case 'getGuests':
                     if (!params.event_id) throw new Error('Missing event_id for getGuests tool call.');
                     console.log(`Tool Call: Executing getGuests for event ${params.event_id} with filter ${params.status_filter}`);
-                    rawData = await lumaClient.getGuests(encryptedApiKey, params.event_id, {
-                        approval_status: params.status_filter
-                    });
+                    rawData = await lumaClient.getGuests(encryptedApiKey, params.event_id, { approval_status: params.status_filter });
                     break;
                 case 'getEvent':
                     if (!params.event_id) throw new Error('Missing event_id for getEvent tool call.');
@@ -114,59 +100,50 @@ const messageHandler = async (ctx) => {
                     rawData = await lumaClient.getEvent(encryptedApiKey, params.event_id);
                     break;
                 case 'updateGuestStatus':
-                    if (!params.event_id || !params.guest_email || !params.new_status) {
-                        throw new Error('Missing required parameters (event_id, guest_email, new_status) for updateGuestStatus tool call.');
-                    }
-                    if (params.new_status !== 'approved' && params.new_status !== 'declined') {
-                        throw new Error(`Invalid new_status '${params.new_status}'. Must be 'approved' or 'declined'.`);
-                    }
+                    if (!params.event_id || !params.guest_email || !params.new_status) throw new Error('Missing required parameters for updateGuestStatus');
+                    if (params.new_status !== 'approved' && params.new_status !== 'declined') throw new Error(`Invalid new_status '${params.new_status}'`);
                     console.log(`Tool Call: Executing updateGuestStatus for event ${params.event_id}, guest ${params.guest_email} to ${params.new_status}`);
-                    // We might want to add should_refund handling later if needed
                     const updateResult = await lumaClient.updateGuestStatus(encryptedApiKey, params.event_id, params.guest_email, params.new_status);
                     console.log("updateGuestStatus API Result:", updateResult);
-                    // Generate a simple text response for success
-                    actionResultText = `Successfully updated status for guest ${params.guest_email} to ${params.new_status} for event ${params.event_id}.`;
+                    // Create a simple success message - post-processing will refine tone
+                    actionResultText = `Okay, I've updated the status for guest ${params.guest_email} to ${params.new_status} for event ${params.event_id}.`;
                     break;
                 default:
-                    console.warn(`Unknown tool requested: ${tool}`);
-                    initialResponseText = await generateDirectAnswerFromContext(userText, { events: eventContext });
-                    // Ensure we don't try to format data below if we fell back here
-                    rawData = null;
-                    actionResultText = initialResponseText;
+                    console.warn(`Unknown tool requested by resolveQuery: ${tool}`);
+                    actionResultText = `Sorry, I received a request for an unknown action ('${tool}').`;
                     break;
             }
 
-            // If a tool returned data (getGuests/getEvent), format it
+            // Format data if needed, otherwise use action result text
             if (rawData !== null) {
                  console.log(`Tool Call Result (${tool}):`, JSON.stringify(rawData, null, 2));
-                 initialResponseText = await formatDataWithGemini(rawData, userText);
+                 rawResponseText = await formatDataWithGemini(rawData, userText); // Format the data from the tool call
             } else if (actionResultText !== null) {
-                // If a tool returned a simple text result (updateGuestStatus)
-                initialResponseText = actionResultText;
+                rawResponseText = actionResultText;
             }
-            // If initialResponseText is still empty here, something went wrong or fallback occurred
 
         } catch (toolError) {
             console.error(`Error executing tool ${tool}:`, toolError);
-            initialResponseText = escapeMarkdownV2(`Sorry, I encountered an error while trying to perform the action '${tool}': ${toolError.message}`);
+            // Use a simple error message, let post-processing refine tone
+            rawResponseText = `Sorry, I encountered an error trying to ${tool}: ${toolError.message}`;
         }
-
-    } else { // Default to DIRECT_ANSWER
-        if (actionDecision.message) {
-             console.log("Action Decision Message (defaulting to direct answer):", actionDecision.message);
-        }
-        console.log("Executing Direct Answer path...");
-        initialResponseText = await generateDirectAnswerFromContext(userText, { events: eventContext });
+    } else if (typeof resolveResult === 'string') {
+        // It's a direct answer from resolveQuery
+        console.log("Handler: Received DIRECT_ANSWER text from resolveQuery");
+        rawResponseText = resolveResult;
+    } else {
+        // Unexpected result from resolveQuery
+        console.error("Handler: Received unexpected result from resolveQuery:", resolveResult);
+        rawResponseText = "Sorry, I encountered an unexpected issue understanding your request.";
     }
 
-    console.log("Initial Response Text (Pre-Processing):", initialResponseText);
+    console.log("Response Text (Pre-Processing):", rawResponseText);
 
     // 4. Post-process the response for cleanup and natural tone
-    const finalResponseText = await postProcessResponse(initialResponseText);
+    const finalResponseText = await postProcessResponse(rawResponseText);
     console.log("Final Response Text (Post-Processing):", finalResponseText);
 
     // 5. Reply with the final, processed response text
-    // Ensure fallback text if finalResponseText is somehow empty
     return ctx.replyWithMarkdownV2(escapeMarkdownV2(finalResponseText || "Sorry, I couldn't generate a response."));
 
   } catch (error) {

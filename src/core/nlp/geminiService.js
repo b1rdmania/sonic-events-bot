@@ -1,17 +1,11 @@
-// DEVELOPMENT PHILOSOPHY: Prioritize refining prompts over hardcoding logic.
-// Aim for natural language interaction by leveraging LLM understanding.
-// See BOT_CAPABILITIES.md for more details.
-
-// Remove previous debug logging and commented out import
-const config = require('../../config');
+// DEVELOPMENT PHILOSOPHY: Simplify Code, Trust Gemini, Post-Process.\n// Primary logic in resolveQuery, formatData minimal, postProcess cleans up.\n// See BOT_CAPABILITIES.md for more details.\n\nconst config = require('../../config');
 const { escapeMarkdownV2 } = require('../services/escapeUtil');
-const fs = require('fs'); // Need fs to read capabilities file
-const path = require('path'); // Need path for resolving file path
+const fs = require('fs');
+const path = require('path');
 
-// --- Singleton Pattern for Gemini Instance ---
-let GoogleGenAIClass = null; // Keep class reference if needed elsewhere, though maybe not
+// --- Singleton Pattern --- (Keep getGeminiInstance unchanged)
+let GoogleGenAIClass = null;
 let genAIInstance = null;
-
 async function getGeminiInstance() {
   // Return cached instance if available
   if (genAIInstance) {
@@ -59,9 +53,20 @@ async function getGeminiInstance() {
 
 // Define safety settings (can remain global, initialized lazily)
 let safetySettings = null;
+async function initializeSafetySettingsIfNeeded() {
+    if (!safetySettings) {
+        const { HarmCategory, HarmBlockThreshold } = await import('@google/genai');
+        safetySettings = [
+            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+        ];
+    }
+}
 
 // --- Read Capabilities ---
-let botCapabilities = "Bot capabilities not loaded.";
+let botCapabilities = "Error loading capabilities...";
 try {
     // Use path.join for cross-platform compatibility and correct path resolution
     const capabilitiesPath = path.join(__dirname, '..', '..', 'BOT_CAPABILITIES.md');
@@ -85,326 +90,106 @@ ${limitationsMatch ? limitationsMatch[1].trim() : 'Refer to BOT_CAPABILITIES.md'
 }
 // --- End Read Capabilities ---
 
-/**
- * Analyzes user input using Gemini to generate a direct natural language response
- * ONLY IF the answer is likely answerable from the provided context.
- * @param {string} text - User's natural language query.
- * @param {object} context - Additional context (e.g., { events: [...] }).
- * @returns {Promise<string>} - A promise resolving to the generated natural language response string, or an error message string.
- */
-async function generateDirectAnswerFromContext(text, context = {}) {
-    // Renamed from processNaturalLanguageQuery
-    // Implementation remains largely the same as the original processNaturalLanguageQuery
-    // It focuses on directly answering based on context.
+/**\n * Primary function to resolve user query.\n * Determines if a tool call is needed or if a direct answer can be generated.\n * Outputs either JSON for a tool call OR the natural language direct answer.\n * @param {string} text - User's natural language query.\n * @param {object} context - Additional context (e.g., { events: [...] }).\n * @returns {Promise<object | string>} - JSON object for tool call OR string for direct answer.\n */
+async function resolveQuery(text, context = {}) {
     try {
-        // 1. Get the singleton Gemini instance
         const genAI = await getGeminiInstance();
-        if (!genAI) {
-            throw new Error('Failed to retrieve Gemini AI instance.');
-        }
-
-        // Initialize safety settings lazily
-        if (!safetySettings) {
-            const { HarmCategory, HarmBlockThreshold } = await import('@google/genai');
-            safetySettings = [
-                { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-                { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-                { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-                { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-            ];
-        }
-
-        // 2. Get model ID
+        if (!genAI) throw new Error('Failed to retrieve Gemini AI instance.');
+        await initializeSafetySettingsIfNeeded();
         const modelId = config.gemini.modelId || "gemini-2.0-flash";
 
-        // 3. Build the event context string
-  const availableEvents = context.events || [];
-  const eventContextString = availableEvents.length > 0
-            ? `Here is the list of relevant Luma events:\n${availableEvents.map(e => `- ${e.name} (ID: ${e.api_id}, Starts: ${e.start_at || 'N/A'})`).join('\\n')}`
-            : "There is no specific event context available right now.";
-        // console.log("DirectAnswer: Built eventContextString:", eventContextString); // Optional: Add specific prefix
-
-        // 4. Create the simplified prompt for direct answers
-        const simplifiedPrompt = `You are a helpful and efficient AI assistant managing Luma events, acting like a secretary for the user. Respond in a natural, conversational, and concise manner based *only* on the provided context.\nIf the user's request can be answered directly using the context below, provide the answer clearly and politely.\nIf the user asks for an action (like approving a guest) but provides incomplete information (e.g., missing the guest email), ask a clarifying question to get the missing details.\nIf the context doesn't contain the answer, or if the user asks for something you know you can't do (like managing bot users), politely state that you don't have that information or capability.\n\n${eventContextString}\n\nUser Request: \"${text}\"\n\nAnswer:`;
-        // console.log("DirectAnswer: Full prompt being sent to Gemini:", simplifiedPrompt); // Optional: Add specific prefix
-
-        // 5. Generate content
-        // console.log(`DirectAnswer: Using model ${modelId}. Calling generateContent...`); // Optional: Add specific prefix
-        const result = await genAI.models.generateContent({
-            model: modelId,
-            contents: [{ role: "user", parts: [{ text: simplifiedPrompt }] }],
-        safetySettings: safetySettings,
-        });
-
-        // 6. Process the TEXT response (same as before)
-        const candidates = result?.candidates;
-        const responseText = candidates?.[0]?.content?.parts?.[0]?.text;
-
-        if (!responseText) {
-            console.error('DirectAnswer: No valid text part found in Gemini response:', JSON.stringify(result, null, 2));
-            const promptFeedback = result?.promptFeedback;
-      if (promptFeedback?.blockReason) {
-                console.error("DirectAnswer: Prompt blocked:", promptFeedback.blockReason);
-                return `Sorry, your request was blocked due to safety settings (${promptFeedback.blockReason}).`;
-            }
-      if (candidates && candidates.length > 0 && candidates[0].finishReason && candidates[0].finishReason !== 'STOP') {
-                console.error("DirectAnswer: Candidate finished with reason:", candidates[0].finishReason);
-                return `Sorry, the response generation stopped unexpectedly (${candidates[0].finishReason}).`;
-            }
-            return "Sorry, I received an empty or invalid response from the AI.";
-        }
-
-        // console.log("DirectAnswer: Generated Response:", responseText); // Optional: Add specific prefix
-        return responseText.trim();
-
-    } catch (error) {
-        console.error(`Error in generateDirectAnswerFromContext: ${error.message}\\nStack: ${error.stack}`);
-        return `Sorry, I encountered an error processing your request: ${error.message}`;
-    }
-}
-
-/**
- * Determines if a user query requires calling a specific Luma API function (tool)
- * or if it can be answered directly from context.
- * Returns either the structured tool call info or indicates a direct answer is needed.
- * @param {string} text - User's natural language query.
- * @param {object} context - Additional context (e.g., { events: [...] }).
- * @returns {Promise<{ action: 'TOOL_CALL' | 'DIRECT_ANSWER', tool?: string, params?: object, message?: string }>}
- */
-async function determineAction(text, context = {}) {
-    try {
-        // 1. Get Gemini Instance
-        const genAI = await getGeminiInstance();
-        if (!genAI) throw new Error('Failed to retrieve Gemini AI instance for action determination.');
-
-        // Initialize safety settings if needed
-        if (!safetySettings) {
-            const { HarmCategory, HarmBlockThreshold } = await import('@google/genai');
-            safetySettings = [
-                { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-                { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-                { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-                { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-            ];
-        }
-
-        // 2. Model ID
-        const modelId = config.gemini.modelId || "gemini-2.0-flash";
-
-        // 3. Build Context String (same as direct answer function)
+        // Build Context String
         const availableEvents = context.events || [];
         const eventContextString = availableEvents.length > 0
-            ? `Relevant Luma Events Context:\n${availableEvents.map(e => `- ${e.name} (ID: ${e.api_id}, Starts: ${e.start_at || 'N/A'})`).join('\\n')}`
+            ? `Relevant Luma Events Context:\\n${availableEvents.map(e => `- ${e.name} (ID: ${e.api_id}, Starts: ${e.start_at || 'N/A'})`).join('\\n')}`
             : "No specific event context available.";
 
-        // 4. Define Available Tools (simplified description for the prompt)
-        const toolsDescription = `
-You have access to the following Luma functions (tools) to get information OR take actions:
+        // Define Available Tools
+        const toolsDescription = `\nYou have access to the following Luma functions (tools) to get information OR take actions:\n1. getEvent(event_id): Gets ALL details for a SINGLE specific event.\n2. getGuests(event_id, [status_filter]): Lists guests for an event. Optional 'status_filter': 'approved', 'pending_approval'.\n3. updateGuestStatus(event_id, guest_email, new_status): Updates guest status. 'new_status': 'approved' or 'declined'. Requires guest_email.\n        `.trim();
 
-1.  **getEvent(event_id)**: Gets *all* details for a *single* specific event. Use this if the user asks for details beyond name/date/id provided in the context.
-2.  **getGuests(event_id, [status_filter])**: Lists guests for a specific event. Optional 'status_filter' can be 'approved' or 'pending_approval'. Use this for requests about *who* is attending or their status.
-3.  **updateGuestStatus(event_id, guest_email, new_status)**: Updates a specific guest's status. Requires the event ID and the guest's email. 'new_status' must be either 'approved' or 'declined'.
-        `.trim();
+        // Construct the Main Prompt
+        const mainPrompt = `\nYou are an AI assistant acting as a helpful secretary managing Luma events.\nAnalyze the User Request considering the Context, your Capabilities, and available Tools.\n\n**Context:**\n${eventContextString}\n\n**Your Capabilities & Limitations:**\n${botCapabilities}\n\n**Available Tools:**\n${toolsDescription}\n\n**User Request:** \"${text}\"\n\n**Your Task:** Decide the *best* course of action.\n1.  **If fulfilling the request REQUIRES using one of the tools** (because the info isn't in the context or an action is needed) AND you can reliably extract all necessary parameters (event_id, guest_email etc.):\n    Respond with ONLY the JSON object specifying the tool call. Examples:\n    \`\`\`json\n    {\"action\": \"TOOL_CALL\", \"tool\": \"getGuests\", \"params\": {\"event_id\": \"evt-...\", \"status_filter\": \"pending_approval\"}}\n    \`\`\`\n    \`\`\`json\n    {\"action\": \"TOOL_CALL\", \"tool\": \"updateGuestStatus\", \"params\": {\"event_id\": \"evt-...\", \"guest_email\": \"user@example.com\", \"new_status\": \"approved\"}}\n    \`\`\`
+    *   Resolve ambiguous event names to IDs from context if possible.\n2.  **Otherwise (if the request can be answered from context, is a limitation, needs clarification like a missing email, or is unclear):**\n    Respond DIRECTLY with the final, natural language answer, written in a helpful, conversational secretary tone suitable for Telegram. Use minimal Markdown (only for essential function like links). DO NOT output JSON in this case. Examples:\n    *   \"Okay, the Dubai event (evt-...) is scheduled for May 1st, 2025.\"
+    *   \"I can approve guests, but I'll need the email address for the guest you want to approve for the Dubai event.\"
+    *   \"Sorry, I cannot manage bot access or authorize new users.\"
+\n**Response:** (Either JSON for TOOL_CALL or Natural Language Text for DIRECT_ANSWER)\n        `;
 
-        // 5. Construct the Action Determination Prompt
-        const actionPrompt = `
-You are an assistant helping manage Luma events. Analyze the User Request below, considering the provided Context and your Capabilities/Limitations.
-
-**Context:**
-${eventContextString}
-
-**Your Capabilities & Limitations:**
-${botCapabilities}
-
-**Available Tools:**
-${toolsDescription}
-
-**User Request:** "${text}"
-
-**Your Task:**
-Decide the best course of action:
-1.  **TOOL_CALL:** If the user asks for information or to perform an action *only* available via one of the tools AND you can reliably extract all necessary parameters (like event_id, guest_email), respond with ONLY a JSON object specifying the tool and parameters.
-    *   Example formats:
-        \`\`\`json
-        {"action": "TOOL_CALL", "tool": "getGuests", "params": {"event_id": "evt-..."}}
-        \`\`\`
-        \`\`\`json
-        {"action": "TOOL_CALL", "tool": "getGuests", "params": {"event_id": "evt-...", "status_filter": "pending_approval"}}
-        \`\`\`
-        \`\`\`json
-        {"action": "TOOL_CALL", "tool": "getEvent", "params": {"event_id": "evt-..."}}
-        \`\`\`
-        \`\`\`json
-        {"action": "TOOL_CALL", "tool": "updateGuestStatus", "params": {"event_id": "evt-...", "guest_email": "user@example.com", "new_status": "approved"}}
-        \`\`\`
-        \`\`\`json
-        {"action": "TOOL_CALL", "tool": "updateGuestStatus", "params": {"event_id": "evt-...", "guest_email": "user@example.com", "new_status": "declined"}}
-        \`\`\`
-    *   Ensure \`event_id\` exists in the context. Resolve ambiguous event references if possible. If ambiguous or not found, use DIRECT_ANSWER.
-2.  **DIRECT_ANSWER:** Respond with ONLY \`{\"action\": \"DIRECT_ANSWER\"}\` IF:
-    *   The request can be answered sufficiently using *only* the provided Context.
-    *   The request falls under your Limitations (like asking to authorize users).
-    *   The request requires clarification (e.g., ambiguous event reference, missing required parameter like **guest_email** for updateGuestStatus).
-    *   The intent is unclear or the request is outside your capabilities.
-
-**IMPORTANT:** Respond with ONLY the JSON object. If you choose DIRECT_ANSWER because clarification is needed (like a missing email), the separate direct answer generation step will handle asking the user for the missing information based on the context.
-        `;
-
-        // 6. Call Gemini
-        console.log("DetermineAction: Calling Gemini to decide action...");
-        // console.log("DetermineAction: Prompt:", actionPrompt); // DEBUG: Log prompt if needed
+        console.log(\"ResolveQuery: Calling Gemini...\");
         const result = await genAI.models.generateContent({
             model: modelId,
-            contents: [{ role: "user", parts: [{ text: actionPrompt }] }],
+            contents: [{ role: \"user\", parts: [{ text: mainPrompt }] }],
             safetySettings: safetySettings,
-            // Force JSON output if model supports it and we can configure it here?
-            // For now, we rely on prompt instructions and parse the text response.
         });
 
-        // 7. Parse the Response
         const candidates = result?.candidates;
         let responseText = candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
-        // *** ADD RAW RESPONSE LOGGING HERE ***
-        console.log("DetermineAction: Raw Gemini response text:", responseText); // Log before cleaning/parsing
         if (!responseText) {
-            console.error('DetermineAction: No text response from Gemini for action determination:', JSON.stringify(result, null, 2));
-            return { action: 'DIRECT_ANSWER', message: 'Error determining action, attempting direct answer.' };
+            console.error(\'ResolveQuery: No text response from Gemini.\', JSON.stringify(result, null, 2));
+            return \"Sorry, I encountered an issue processing your request.\"; // Default error text
         }
 
-        // Clean potential markdown ```json ... ```
-        responseText = responseText.replace(/^```json\s*|```$/g, '').trim();
+        console.log(\"ResolveQuery: Raw Gemini response:\", responseText);
 
-        try {
-            const decision = JSON.parse(responseText);
-            if (decision.action === 'TOOL_CALL' && decision.tool && decision.params) {
-                console.log("DetermineAction: Decided TOOL_CALL:", decision);
-                return decision; // Contains action, tool, params
-            } else if (decision.action === 'DIRECT_ANSWER') {
-                console.log("DetermineAction: Decided DIRECT_ANSWER");
-                return { action: 'DIRECT_ANSWER' };
-            } else {
-                console.error("DetermineAction: Invalid JSON structure received:", responseText);
-                return { action: 'DIRECT_ANSWER', message: 'Received invalid decision structure, attempting direct answer.' };
+        // Check if the response LOOKS like JSON for a tool call
+        if (responseText.startsWith('{') && responseText.endsWith('}')) {
+            try {
+                // Attempt to parse, clean markdown first just in case
+                const cleanedJson = responseText.replace(/^```json\\s*|```$/g, '').trim();
+                const decision = JSON.parse(cleanedJson);
+                if (decision.action === 'TOOL_CALL' && decision.tool && decision.params) {
+                    console.log(\"ResolveQuery: Decided TOOL_CALL:\", decision);
+                    return decision; // Return the JSON object
+                }
+            } catch (e) {
+                // It looked like JSON but wasn't valid, treat as direct answer
+                console.warn(\"ResolveQuery: Response looked like JSON but failed to parse. Treating as direct answer.\", e);
+                // Fall through to return responseText as direct answer
             }
-    } catch (parseError) {
-            // Log the raw text again in case of parse error
-            console.error("DetermineAction: Failed to parse Gemini JSON response:", parseError, "Raw response after cleaning:", responseText);
-            return { action: 'DIRECT_ANSWER', message: 'Failed to parse decision, attempting direct answer.' };
         }
 
-  } catch (error) {
-        console.error(`Error in determineAction: ${error.message}\\nStack: ${error.stack}`);
-        // Fallback to direct answer on error
-        return { action: 'DIRECT_ANSWER', message: `Error determining action: ${error.message}` };
-  }
+        // If it wasn't valid JSON or didn't parse, assume it's a direct answer
+        console.log(\"ResolveQuery: Treating response as DIRECT_ANSWER text.\");
+        return responseText; // Return the plain text
+
+    } catch (error) {
+        console.error(`Error in resolveQuery: ${error.message}\\\\nStack: ${error.stack}`);
+        return `Sorry, an error occurred while processing your query: ${error.message}`;
+    }
 }
 
-/**
- * Takes raw data and instructions, asks Gemini to format it for the user.
- * @param {object|array} data - The raw data to be formatted (e.g., list of events, guests).
- * @param {string} userQueryContext - Context for the formatting request.
- * @returns {Promise<string>} - Gemini's formatted text response.
- * @throws {Error} - If the API call fails or returns an unexpected response.
- */
-async function formatDataWithGemini(data, userQueryContext = "the user's request") {
-  try {
-    // 1. Get the singleton Gemini instance
-    const genAI = await getGeminiInstance();
-    if (!genAI) {
-      throw new Error('Failed to retrieve Gemini AI instance (formatter).');
-    }
+/**\n * Formats raw data (typically from Luma API) into a basic structure.\n * Minimal prompt, assuming post-processing will handle final tone/markdown.\n * @param {object|array} data - The raw data.\n * @param {string} userQueryContext - Context for the formatting request.\n * @returns {Promise<string>} - Basic formatted text.\n */
+async function formatDataWithGemini(data, userQueryContext = \"the user's request\") {
+    try {
+        const genAI = await getGeminiInstance();
+        if (!genAI) throw new Error('Failed to retrieve Gemini AI instance for formatting.');
+        await initializeSafetySettingsIfNeeded();
+        const modelId = config.gemini.modelId || "gemini-2.0-flash";
 
-    // Initialize safety settings lazily
-    if (!safetySettings) {
-        const { HarmCategory, HarmBlockThreshold } = await import('@google/genai');
-        safetySettings = [
-            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-        ];
-    }
+        // Simplified prompt: Focus on structure, not tone/markdown
+        const formatPrompt = `\nFormat the following JSON data based on the user's request about \"${userQueryContext}\".\n- If it's a list of guests, state the total count first, then list each guest with name and email using simple bullet points.\n- If it's event details, list the key information.\n- If data is empty, state that clearly.\n- Mention if data has 'has_more: true'.\n\nRaw Data:\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\`\n\nFormatted Output:\n`;
 
-    // 2. Get the specific model using the instance -- No, call generateContent directly
-    const modelId = config.gemini.modelId || "gemini-2.0-flash";
-    // console.log(`Using model: ${modelId} for formatting. Getting model via genAI.models.getGenerativeModel...`);
-    // const model = genAI.models.getGenerativeModel({ // This method does not exist on models object
-    //     model: modelId,
-    //     safetySettings: safetySettings
-    // });
-    // console.log('Successfully got generative model for formatting.');
+        console.log(\"FormatData: Calling Gemini...\");
+        const result = await genAI.models.generateContent({
+            model: modelId,
+            contents: [{ role: \"user\", parts: [{ text: formatPrompt }] }],
+            safetySettings: safetySettings,
+        });
+        const candidates = result?.candidates;
+        const formattedText = candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
-    // 3. Build the prompt
-  const prompt = `
-You are an AI assistant acting as a helpful secretary. Your task is to take the raw JSON data below and present it as a natural, conversational response suitable for Telegram. The user asked about: \"${userQueryContext}\"
-
-**Response Guidelines for Telegram:**
-- **Tone:** Friendly, efficient, and conversational, like a helpful secretary writing a message.
-- **Formatting:** Present the information clearly and naturally. **Do NOT use Markdown formatting like bolding or italics unless absolutely necessary for function (e.g., making URLs clickable with \`[Link Text](URL)\`).** Trust your judgment to format lists and details readably without extra markdown.
-- **Lists (Events/Guests):**
-    - **State the total count *first* in a natural sentence (e.g., \"Okay, I found 30 guests on the pending list for Dubai:\").**
-    - Use simple bullet points for lists.
-    - Present each item clearly and conversationally. For guests, ensure **name** and **email** are included, along with other relevant details integrated smoothly.
-- **Other Details:**
-    - Mention if there are more results (\`has_more: true\`) naturally.
-    - State clearly and politely if data is empty.
-    - Format dates/times naturally.
-
-**Raw Data:**
-\`\`\`json
-${JSON.stringify(data, null, 2)}
-\`\`\`
-
-**Formatted Response (Natural, Conversational, NO unnecessary Markdown):**
-`;
-
-    // 4. Generate content using genAI.models.generateContent directly
-    console.log(`Using model ${modelId}. Calling genAI.models.generateContent for formatting...`);
-    const result = await genAI.models.generateContent({
-        model: modelId,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        safetySettings: safetySettings,
-    });
-
-    // 5. Process result
-    const candidates = result?.candidates;
-
-    // --- Simpler check using optional chaining --- 
-    const responseText = candidates?.[0]?.content?.parts?.[0]?.text;
-
-    // Check if responseText is missing or empty after optional chaining
-    if (!responseText) {
-        console.error("Invalid response structure (no text) from Gemini formatting model (checked via optional chaining):", JSON.stringify(result, null, 2));
-        const promptFeedback = result?.promptFeedback; // Check directly on result
-        if (promptFeedback?.blockReason) {
-            console.error("Formatting prompt blocked:", promptFeedback.blockReason);
-            return escapeMarkdownV2(`I couldn\'t format the response due to safety settings: ${promptFeedback.blockReason}`);
+        if (!formattedText) {
+            console.warn(\"FormatData: No formatted text received. Returning raw data string.\", JSON.stringify(result, null, 2));
+            return `Data received but could not be formatted: ${JSON.stringify(data)}`; // Fallback
         }
-        if (candidates && candidates.length > 0 && candidates[0].finishReason && candidates[0].finishReason !== 'STOP') {
-           console.error("Formatting candidate finished with reason:", candidates[0].finishReason);
-           return escapeMarkdownV2(`Sorry, I encountered an issue while formatting the data (${candidates[0].finishReason}).`);
-        }
-        // Generic error if text is still missing
-        return escapeMarkdownV2("Sorry, I couldn\'t format the data properly (missing text).");
+        return formattedText;
+    } catch (error) {
+        console.error(`Error in formatDataWithGemini: ${error.message}\\\\nStack: ${error.stack}`);
+        return `Error formatting data: ${error.message}. Raw data: ${JSON.stringify(data)}`;
     }
-    // --- End Simpler Check --- 
-
-    // Process the valid text (KEEP EXISTING CLEANING LOGIC FOR FORMATTER IF NEEDED, though likely not needed here)
-    const formattedText = responseText; // Assume formatter doesn't wrap in ```json
-    return formattedText;
-
-  } catch (error) {
-    console.error(`Error in formatDataWithGemini: ${error.message}\nStack: ${error.stack}`);
-    return escapeMarkdownV2(`Sorry, an error occurred while trying to format the response: ${error.message}. Raw data: ${JSON.stringify(data)}`);
-  }
 }
 
-/**
- * Post-processes a generated response to clean up unnecessary Markdown and ensure natural language.
- * @param {string} inputText - The text generated by a previous LLM step.
- * @returns {Promise<string>} - The cleaned-up, natural language text.
- */
+// Keep postProcessResponse function as defined previously
 async function postProcessResponse(inputText) {
     if (!inputText || typeof inputText !== 'string') {
         console.warn("PostProcess: Received invalid input, skipping.");
@@ -473,8 +258,7 @@ ${inputText}
 }
 
 module.exports = {
-  generateDirectAnswerFromContext, // Renamed function
-  determineAction, // New function for deciding action
-  formatDataWithGemini,
-  postProcessResponse // Export the new function
+  resolveQuery,       // New primary function
+  formatDataWithGemini, // Kept for formatting tool results
+  postProcessResponse // Kept for final cleanup
 }; 
