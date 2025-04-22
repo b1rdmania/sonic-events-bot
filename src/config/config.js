@@ -2,7 +2,7 @@ require('dotenv').config();
 
 const config = {
     telegram: {
-        token: process.env.BOT_TOKEN,
+        botToken: process.env.BOT_TOKEN,
         agentChannel: process.env.AGENT_CHANNEL // We'll add this to .env later
     },
     openai: {
@@ -12,6 +12,12 @@ const config = {
     gemini: {
         apiKey: process.env.GEMINI_API_KEY,
         modelId: process.env.GEMINI_MODEL_ID || 'gemini-2.0-flash' // Default model
+    },
+    database: {
+        url: process.env.DATABASE_URL
+    },
+    security: {
+        encryptionKey: process.env.ENCRYPTION_KEY
     },
     bot: {
         name: 'CoinWings',
