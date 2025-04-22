@@ -1,4 +1,4 @@
-// DEVELOPMENT PHILOSOPHY: Simplify Code, Trust Gemini, Post-Process.\n// Primary logic in resolveQuery, formatData minimal, postProcess cleans up.\n// See BOT_CAPABILITIES.md for more details.\n\nconst config = require('../../config');
+// DEVELOPMENT PHILOSOPHY: Simplify Code, Trust Gemini, Post-Process.\n// Primary logic in resolveQuery, formatData minimal, postProcess cleans up.\n// See BOT_CAPABILITIES.md for more details.\n\nconst config = require('../../config/config.js');
 const { escapeMarkdownV2 } = require('../services/escapeUtil');
 const fs = require('fs');
 const path = require('path');
