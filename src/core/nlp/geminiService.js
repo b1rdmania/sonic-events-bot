@@ -1,4 +1,10 @@
 // DEVELOPMENT PHILOSOPHY: Simplify Code, Trust Gemini, Post-Process.\n// Primary logic in resolveQuery, formatData minimal, postProcess cleans up.\n// See BOT_CAPABILITIES.md for more details.\n\nconst config = require('../../config/config.js');
+console.log('*** DEBUG: Config at module load:', typeof config);
+if (typeof config === 'object' && config !== null) {
+    console.log('*** DEBUG: Config keys at load:', Object.keys(config));
+} else {
+    console.log('*** DEBUG: Config is NOT an object at load!');
+}
 const { escapeMarkdownV2 } = require('../services/escapeUtil');
 const fs = require('fs');
 const path = require('path');
@@ -36,6 +42,12 @@ async function getGeminiInstance() {
 
   // Instantiate and cache the instance
   try {
+    console.log('*** DEBUG: Config inside getGeminiInstance:', typeof config);
+     if (typeof config === 'object' && config !== null) {
+        console.log('*** DEBUG: Config keys inside instance:', Object.keys(config));
+    } else {
+        console.log('*** DEBUG: Config is NOT an object inside instance!');
+    }
     if (!config.gemini.apiKey) {
       throw new Error('Missing required environment variable: GEMINI_API_KEY cannot instantiate');
     }
