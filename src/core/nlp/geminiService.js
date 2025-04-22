@@ -36,8 +36,6 @@ async function getGeminiInstance() {
 
   // Instantiate and cache the instance
   try {
-    // Add debug logging for config object
-    console.log('DEBUG: config object inside getGeminiInstance:', typeof config, JSON.stringify(config, null, 2));
     if (!config.gemini.apiKey) {
       throw new Error('Missing required environment variable: GEMINI_API_KEY cannot instantiate');
     }
@@ -171,10 +169,10 @@ ${toolsDescription}
         console.log("ResolveQuery: Raw Gemini response:", responseText);
 
         // Check if the response LOOKS like JSON for a tool call
-        if (responseText.startsWith('{') && responseText.endsWith('}')) {
+        // Clean markdown fences FIRST, then check/parse
+        const cleanedJson = responseText.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
+        if (cleanedJson.startsWith('{') && cleanedJson.endsWith('}')) {
             try {
-                // Attempt to parse, clean markdown first just in case
-                const cleanedJson = responseText.replace(/^```json\\s*|```$/g, '').trim();
                 const decision = JSON.parse(cleanedJson);
                 if (decision.action === 'TOOL_CALL' && decision.tool && decision.params) {
                     console.log("ResolveQuery: Decided TOOL_CALL:", decision);
