@@ -1,5 +1,4 @@
-// DEVELOPMENT PHILOSOPHY: Simplify Code, Trust Gemini, Post-Process.\n// Primary logic in resolveQuery, formatData minimal, postProcess cleans up.\n// See BOT_CAPABILITIES.md for more details.\n\nconst config = require('../../config/config.js');
-const { escapeMarkdownV2 } = require('../services/escapeUtil');
+// DEVELOPMENT PHILOSOPHY: Simplify Code, Trust Gemini, Post-Process.\n// Primary logic in resolveQuery, formatData minimal, postProcess cleans up.\n// See BOT_CAPABILITIES.md for more details.\n\nconst { escapeMarkdownV2 } = require('../services/escapeUtil');
 const fs = require('fs');
 const path = require('path');
 
@@ -7,6 +6,9 @@ const path = require('path');
 let GoogleGenAIClass = null;
 let genAIInstance = null;
 async function getGeminiInstance() {
+  // Move require inside
+  const config = require('../../config/config.js');
+
   // Return cached instance if available
   if (genAIInstance) {
     // console.log('Returning cached genAI instance');
@@ -92,6 +94,8 @@ ${limitationsMatch ? limitationsMatch[1].trim() : 'Refer to BOT_CAPABILITIES.md'
 
 /**\n * Primary function to resolve user query.\n * Determines if a tool call is needed or if a direct answer can be generated.\n * Outputs either JSON for a tool call OR the natural language direct answer.\n * @param {string} text - User's natural language query.\n * @param {object} context - Additional context (e.g., { events: [...] }).\n * @returns {Promise<object | string>} - JSON object for tool call OR string for direct answer.\n */
 async function resolveQuery(text, context = {}) {
+    // Move require inside
+    const config = require('../../config/config.js');
     try {
         const genAI = await getGeminiInstance();
         if (!genAI) throw new Error('Failed to retrieve Gemini AI instance.');
@@ -193,6 +197,8 @@ ${toolsDescription}
 
 /**\n * Formats raw data (typically from Luma API) into a basic structure.\n * Minimal prompt, assuming post-processing will handle final tone/markdown.\n * @param {object|array} data - The raw data.\n * @param {string} userQueryContext - Context for the formatting request.\n * @returns {Promise<string>} - Basic formatted text.\n */
 async function formatDataWithGemini(data, userQueryContext = "the user's request") {
+    // Move require inside
+    const config = require('../../config/config.js');
     try {
         const genAI = await getGeminiInstance();
         if (!genAI) throw new Error('Failed to retrieve Gemini AI instance for formatting.');
@@ -237,6 +243,8 @@ Formatted Output:
 
 // Keep postProcessResponse function as defined previously
 async function postProcessResponse(inputText) {
+    // Move require inside
+    const config = require('../../config/config.js');
     if (!inputText || typeof inputText !== 'string') {
         console.warn("PostProcess: Received invalid input, skipping.");
         return inputText; // Return input as is if invalid
