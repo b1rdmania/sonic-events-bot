@@ -1,3 +1,4 @@
+console.log('--- Loading config.js ---');
 require('dotenv').config();
 
 const config = {
