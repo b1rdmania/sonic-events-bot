@@ -1,5 +1,5 @@
+const config = require('../config/config.js');
 const { Telegraf } = require('telegraf');
-const config = require('../config');
 const prisma = require('../core/db/prisma'); // Import Prisma client
 const { linkCommandHandler } = require('./commands/link'); // Import the link command handler
 const { command: eventsCommand, handler: eventsHandler } = require('./commands/events'); // Import the events command

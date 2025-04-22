@@ -1,5 +1,5 @@
 const axios = require('axios');
-const config = require('../../config'); // Adjust path as needed
+const config = require('../../config/config.js'); // Adjust path as needed
 const { decrypt } = require('../../lib/crypto');
 
 const LUMA_API_BASE_URL = 'https://api.lu.ma/public/v1';
