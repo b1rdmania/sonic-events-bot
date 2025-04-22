@@ -105,19 +105,52 @@ async function resolveQuery(text, context = {}) {
             : "No specific event context available.";
 
         // Define Available Tools
-        const toolsDescription = `\nYou have access to the following Luma functions (tools) to get information OR take actions:\n1. getEvent(event_id): Gets ALL details for a SINGLE specific event.\n2. getGuests(event_id, [status_filter]): Lists guests for an event. Optional 'status_filter': 'approved', 'pending_approval'.\n3. updateGuestStatus(event_id, guest_email, new_status): Updates guest status. 'new_status': 'approved' or 'declined'. Requires guest_email.\n        `.trim();
+        const toolsDescription = `
+You have access to the following Luma functions (tools) to get information OR take actions:
+1. getEvent(event_id): Gets ALL details for a SINGLE specific event.
+2. getGuests(event_id, [status_filter]): Lists guests for an event. Optional 'status_filter': 'approved', 'pending_approval'.
+3. updateGuestStatus(event_id, guest_email, new_status): Updates guest status. 'new_status': 'approved' or 'declined'. Requires guest_email.
+        `.trim();
 
         // Construct the Main Prompt
-        const mainPrompt = `\nYou are an AI assistant acting as a helpful secretary managing Luma events.\nAnalyze the User Request considering the Context, your Capabilities, and available Tools.\n\n**Context:**\n${eventContextString}\n\n**Your Capabilities & Limitations:**\n${botCapabilities}\n\n**Available Tools:**\n${toolsDescription}\n\n**User Request:** \"${text}\"\n\n**Your Task:** Decide the *best* course of action.\n1.  **If fulfilling the request REQUIRES using one of the tools** (because the info isn't in the context or an action is needed) AND you can reliably extract all necessary parameters (event_id, guest_email etc.):\n    Respond with ONLY the JSON object specifying the tool call. Examples:\n    \`\`\`json\n    {\"action\": \"TOOL_CALL\", \"tool\": \"getGuests\", \"params\": {\"event_id\": \"evt-...\", \"status_filter\": \"pending_approval\"}}\n    \`\`\`\n    \`\`\`json\n    {\"action\": \"TOOL_CALL\", \"tool\": \"updateGuestStatus\", \"params\": {\"event_id\": \"evt-...\", \"guest_email\": \"user@example.com\", \"new_status\": \"approved\"}}\n    \`\`\`
-    *   Resolve ambiguous event names to IDs from context if possible.\n2.  **Otherwise (if the request can be answered from context, is a limitation, needs clarification like a missing email, or is unclear):**\n    Respond DIRECTLY with the final, natural language answer, written in a helpful, conversational secretary tone suitable for Telegram. Use minimal Markdown (only for essential function like links). DO NOT output JSON in this case. Examples:\n    *   \"Okay, the Dubai event (evt-...) is scheduled for May 1st, 2025.\"
-    *   \"I can approve guests, but I'll need the email address for the guest you want to approve for the Dubai event.\"
-    *   \"Sorry, I cannot manage bot access or authorize new users.\"
-\n**Response:** (Either JSON for TOOL_CALL or Natural Language Text for DIRECT_ANSWER)\n        `;
+        const mainPrompt = `
+You are an AI assistant acting as a helpful secretary managing Luma events.
+Analyze the User Request considering the Context, your Capabilities, and available Tools.
 
-        console.log(\"ResolveQuery: Calling Gemini...\");
+**Context:**
+${eventContextString}
+
+**Your Capabilities & Limitations:**
+${botCapabilities}
+
+**Available Tools:**
+${toolsDescription}
+
+**User Request:** "${text}"
+
+**Your Task:** Decide the *best* course of action.
+1.  **If fulfilling the request REQUIRES using one of the tools** (because the info isn't in the context or an action is needed) AND you can reliably extract all necessary parameters (event_id, guest_email etc.):
+    Respond with ONLY the JSON object specifying the tool call. Examples:
+    \`\`\`json
+    {"action": "TOOL_CALL", "tool": "getGuests", "params": {"event_id": "evt-...", "status_filter": "pending_approval"}}
+    \`\`\`
+    \`\`\`json
+    {"action": "TOOL_CALL", "tool": "updateGuestStatus", "params": {"event_id": "evt-...", "guest_email": "user@example.com", "new_status": "approved"}}
+    \`\`\`
+    *   Resolve ambiguous event names to IDs from context if possible.
+2.  **Otherwise (if the request can be answered from context, is a limitation, needs clarification like a missing email, or is unclear):**
+    Respond DIRECTLY with the final, natural language answer, written in a helpful, conversational secretary tone suitable for Telegram. Use minimal Markdown (only for essential function like links). DO NOT output JSON in this case. Examples:
+    *   "Okay, the Dubai event (evt-...) is scheduled for May 1st, 2025."
+    *   "I can approve guests, but I'll need the email address for the guest you want to approve for the Dubai event."
+    *   "Sorry, I cannot manage bot access or authorize new users."
+
+**Response:** (Either JSON for TOOL_CALL or Natural Language Text for DIRECT_ANSWER)
+        `;
+
+        console.log("ResolveQuery: Calling Gemini...");
         const result = await genAI.models.generateContent({
             model: modelId,
-            contents: [{ role: \"user\", parts: [{ text: mainPrompt }] }],
+            contents: [{ role: "user", parts: [{ text: mainPrompt }] }],
             safetySettings: safetySettings,
         });
 
@@ -125,11 +158,11 @@ async function resolveQuery(text, context = {}) {
         let responseText = candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
         if (!responseText) {
-            console.error(\'ResolveQuery: No text response from Gemini.\', JSON.stringify(result, null, 2));
-            return \"Sorry, I encountered an issue processing your request.\"; // Default error text
+            console.error('ResolveQuery: No text response from Gemini.', JSON.stringify(result, null, 2));
+            return "Sorry, I encountered an issue processing your request."; // Default error text
         }
 
-        console.log(\"ResolveQuery: Raw Gemini response:\", responseText);
+        console.log("ResolveQuery: Raw Gemini response:", responseText);
 
         // Check if the response LOOKS like JSON for a tool call
         if (responseText.startsWith('{') && responseText.endsWith('}')) {
@@ -138,28 +171,28 @@ async function resolveQuery(text, context = {}) {
                 const cleanedJson = responseText.replace(/^```json\\s*|```$/g, '').trim();
                 const decision = JSON.parse(cleanedJson);
                 if (decision.action === 'TOOL_CALL' && decision.tool && decision.params) {
-                    console.log(\"ResolveQuery: Decided TOOL_CALL:\", decision);
+                    console.log("ResolveQuery: Decided TOOL_CALL:", decision);
                     return decision; // Return the JSON object
                 }
             } catch (e) {
                 // It looked like JSON but wasn't valid, treat as direct answer
-                console.warn(\"ResolveQuery: Response looked like JSON but failed to parse. Treating as direct answer.\", e);
+                console.warn("ResolveQuery: Response looked like JSON but failed to parse. Treating as direct answer.", e);
                 // Fall through to return responseText as direct answer
             }
         }
 
         // If it wasn't valid JSON or didn't parse, assume it's a direct answer
-        console.log(\"ResolveQuery: Treating response as DIRECT_ANSWER text.\");
+        console.log("ResolveQuery: Treating response as DIRECT_ANSWER text.");
         return responseText; // Return the plain text
 
     } catch (error) {
-        console.error(`Error in resolveQuery: ${error.message}\\\\nStack: ${error.stack}`);
+        console.error(`Error in resolveQuery: ${error.message}\nStack: ${error.stack}`);
         return `Sorry, an error occurred while processing your query: ${error.message}`;
     }
 }
 
 /**\n * Formats raw data (typically from Luma API) into a basic structure.\n * Minimal prompt, assuming post-processing will handle final tone/markdown.\n * @param {object|array} data - The raw data.\n * @param {string} userQueryContext - Context for the formatting request.\n * @returns {Promise<string>} - Basic formatted text.\n */
-async function formatDataWithGemini(data, userQueryContext = \"the user's request\") {
+async function formatDataWithGemini(data, userQueryContext = "the user's request") {
     try {
         const genAI = await getGeminiInstance();
         if (!genAI) throw new Error('Failed to retrieve Gemini AI instance for formatting.');
@@ -167,24 +200,37 @@ async function formatDataWithGemini(data, userQueryContext = \"the user's reques
         const modelId = config.gemini.modelId || "gemini-2.0-flash";
 
         // Simplified prompt: Focus on structure, not tone/markdown
-        const formatPrompt = `\nFormat the following JSON data based on the user's request about \"${userQueryContext}\".\n- If it's a list of guests, state the total count first, then list each guest with name and email using simple bullet points.\n- If it's event details, list the key information.\n- If data is empty, state that clearly.\n- Mention if data has 'has_more: true'.\n\nRaw Data:\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\`\n\nFormatted Output:\n`;
+        const formatPrompt = `
+Format the following JSON data based on the user's request about "${userQueryContext}".
+- If it's a list of guests, state the total count first, then list each guest with name and email using simple bullet points.
+- If it's event details, list the key information.
+- If data is empty, state that clearly.
+- Mention if data has 'has_more: true'.
 
-        console.log(\"FormatData: Calling Gemini...\");
+Raw Data:
+\`\`\`json
+${JSON.stringify(data, null, 2)}
+\`\`\`
+
+Formatted Output:
+`;
+
+        console.log("FormatData: Calling Gemini...");
         const result = await genAI.models.generateContent({
             model: modelId,
-            contents: [{ role: \"user\", parts: [{ text: formatPrompt }] }],
+            contents: [{ role: "user", parts: [{ text: formatPrompt }] }],
             safetySettings: safetySettings,
         });
         const candidates = result?.candidates;
         const formattedText = candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
         if (!formattedText) {
-            console.warn(\"FormatData: No formatted text received. Returning raw data string.\", JSON.stringify(result, null, 2));
+            console.warn("FormatData: No formatted text received. Returning raw data string.", JSON.stringify(result, null, 2));
             return `Data received but could not be formatted: ${JSON.stringify(data)}`; // Fallback
         }
         return formattedText;
     } catch (error) {
-        console.error(`Error in formatDataWithGemini: ${error.message}\\\\nStack: ${error.stack}`);
+        console.error(`Error in formatDataWithGemini: ${error.message}\nStack: ${error.stack}`);
         return `Error formatting data: ${error.message}. Raw data: ${JSON.stringify(data)}`;
     }
 }
