@@ -1,4 +1,3 @@
-console.log('--- Loading geminiService.js ---');
 // DEVELOPMENT PHILOSOPHY: Simplify Code, Trust Gemini, Post-Process.\n// Primary logic in resolveQuery, formatData minimal, postProcess cleans up.\n// See BOT_CAPABILITIES.md for more details.\n\nconst config = require('../../config/config.js');
 console.log('*** DEBUG: Config at module load:', typeof config);
 if (typeof config === 'object' && config !== null) {
@@ -14,7 +13,8 @@ const path = require('path');
 let GoogleGenAIClass = null;
 let genAIInstance = null;
 async function getGeminiInstance() {
-  // REMOVED: const config = require('../../config/config.js');
+  // Add require inside function
+  const config = require('../../config/config.js');
 
   // Return cached instance if available
   if (genAIInstance) {
@@ -43,17 +43,12 @@ async function getGeminiInstance() {
 
   // Instantiate and cache the instance
   try {
-    console.log('*** DEBUG: Config inside getGeminiInstance:', typeof config);
-     if (typeof config === 'object' && config !== null) {
-        console.log('*** DEBUG: Config keys inside instance:', Object.keys(config));
-    } else {
-        console.log('*** DEBUG: Config is NOT an object inside instance!');
-    }
+    // REMOVED: Debug logs for config inside instance
     if (!config.gemini.apiKey) {
       throw new Error('Missing required environment variable: GEMINI_API_KEY cannot instantiate');
     }
     console.log('Instantiating and caching GoogleGenAI instance using { apiKey: ... }');
-    genAIInstance = new GoogleGenAIClass({ 
+    genAIInstance = new GoogleGenAIClass({
         apiKey: config.gemini.apiKey,
         // apiEndpoint: 'generativelanguage.googleapis.com' // Keep endpoint if needed, but often optional
     });
@@ -83,12 +78,11 @@ async function initializeSafetySettingsIfNeeded() {
 // --- Read Capabilities ---
 let botCapabilities = "Error loading capabilities...";
 try {
-    // Use path.join for cross-platform compatibility and correct path resolution
     // Corrected path to go up 3 levels to the root
     const capabilitiesPath = path.join(__dirname, '..', '..', '..', 'BOT_CAPABILITIES.md');
     botCapabilities = fs.readFileSync(capabilitiesPath, 'utf8');
     // Extract relevant sections for the prompt (optional, but cleaner)
-    const capabilitiesMatch = botCapabilities.match(/## Current Capabilities \(Using Luma API\)(.*?)(##|$)/s);
+    const capabilitiesMatch = botCapabilities.match(/## Current Capabilities \\(Using Luma API\\)(.*?)(##|$)/s);
     const limitationsMatch = botCapabilities.match(/## Limitations - What the Bot CANNOT Do(.*?)(##|$)/s);
     // Use template literals for easier string formatting
     botCapabilities = `
@@ -108,7 +102,8 @@ ${limitationsMatch ? limitationsMatch[1].trim() : 'Refer to BOT_CAPABILITIES.md'
 
 /**\n * Primary function to resolve user query.\n * Determines if a tool call is needed or if a direct answer can be generated.\n * Outputs either JSON for a tool call OR the natural language direct answer.\n * @param {string} text - User's natural language query.\n * @param {object} context - Additional context (e.g., { events: [...] }).\n * @returns {Promise<object | string>} - JSON object for tool call OR string for direct answer.\n */
 async function resolveQuery(text, context = {}) {
-    // REMOVED: const config = require('../../config/config.js');
+    // Add require inside function
+    const config = require('../../config/config.js');
     try {
         const genAI = await getGeminiInstance();
         if (!genAI) throw new Error('Failed to retrieve Gemini AI instance.');
@@ -183,7 +178,7 @@ ${toolsDescription}
 
         // Check if the response LOOKS like JSON for a tool call
         // Clean markdown fences FIRST, then check/parse
-        const cleanedJson = responseText.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
+        const cleanedJson = responseText.replace(/^```(?:json)?\\s*|\\s*```$/g, '').trim();
         if (cleanedJson.startsWith('{') && cleanedJson.endsWith('}')) {
             try {
                 const decision = JSON.parse(cleanedJson);
@@ -203,14 +198,15 @@ ${toolsDescription}
         return responseText; // Return the plain text
 
     } catch (error) {
-        console.error(`Error in resolveQuery: ${error.message}\nStack: ${error.stack}`);
+        console.error(`Error in resolveQuery: ${error.message}\\nStack: ${error.stack}`);
         return `Sorry, an error occurred while processing your query: ${error.message}`;
     }
 }
 
 /**\n * Formats raw data (typically from Luma API) into a basic structure.\n * Minimal prompt, assuming post-processing will handle final tone/markdown.\n * @param {object|array} data - The raw data.\n * @param {string} userQueryContext - Context for the formatting request.\n * @returns {Promise<string>} - Basic formatted text.\n */
 async function formatDataWithGemini(data, userQueryContext = "the user's request") {
-    // REMOVED: const config = require('../../config/config.js');
+    // Add require inside function
+    const config = require('../../config/config.js');
     try {
         const genAI = await getGeminiInstance();
         if (!genAI) throw new Error('Failed to retrieve Gemini AI instance for formatting.');
@@ -248,14 +244,15 @@ Formatted Output:
         }
         return formattedText;
     } catch (error) {
-        console.error(`Error in formatDataWithGemini: ${error.message}\nStack: ${error.stack}`);
+        console.error(`Error in formatDataWithGemini: ${error.message}\\nStack: ${error.stack}`);
         return `Error formatting data: ${error.message}. Raw data: ${JSON.stringify(data)}`;
     }
 }
 
 // Keep postProcessResponse function as defined previously
 async function postProcessResponse(inputText) {
-    // REMOVED: const config = require('../../config/config.js');
+    // Add require inside function
+    const config = require('../../config/config.js');
     if (!inputText || typeof inputText !== 'string') {
         console.warn("PostProcess: Received invalid input, skipping.");
         return inputText; // Return input as is if invalid
@@ -315,7 +312,7 @@ ${inputText}
         return refinedText;
 
     } catch (error) {
-        console.error(`Error in postProcessResponse: ${error.message}\nStack: ${error.stack}`);
+        console.error(`Error in postProcessResponse: ${error.message}\\nStack: ${error.stack}`);
         // Fallback to original text on error
         console.warn("PostProcess: Error during cleanup, returning original text.");
         return inputText;
