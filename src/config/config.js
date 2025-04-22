@@ -9,6 +9,10 @@ const config = {
         apiKey: process.env.OPENAI_API_KEY,
         model: 'gpt-4'
     },
+    gemini: {
+        apiKey: process.env.GEMINI_API_KEY,
+        modelId: process.env.GEMINI_MODEL_ID || 'gemini-2.0-flash' // Default model
+    },
     bot: {
         name: 'CoinWings',
         version: '1.0.0'
