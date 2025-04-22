@@ -31,16 +31,25 @@ async function initializeGeminiAndSafetySettings() {
 
     try {
         console.log('[Init] Dynamically importing @google/genai...');
-        // Import both class and enums needed
-        const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = await import('@google/genai');
+        // Import the entire module object
+        const genaiModule = await import('@google/genai');
         console.log('[Init] @google/genai imported successfully.');
 
-        // Validate Class
+        // Access exports via .default
+        const GoogleGenerativeAI = genaiModule.default?.GoogleGenerativeAI;
+        const HarmCategory = genaiModule.default?.HarmCategory;
+        const HarmBlockThreshold = genaiModule.default?.HarmBlockThreshold;
+
+        // Validate Class and Enums
         if (!GoogleGenerativeAI || typeof GoogleGenerativeAI !== 'function') {
              console.error('[Init] GoogleGenerativeAI class not found or not a function after import.', GoogleGenerativeAI);
              throw new Error(`GoogleGenerativeAI class not found or invalid type (${typeof GoogleGenerativeAI})`);
         }
-        console.log('[Init] GoogleGenerativeAI class validated.');
+        if (!HarmCategory || !HarmBlockThreshold) {
+            console.error('[Init] HarmCategory or HarmBlockThreshold not found after import.', { HarmCategory, HarmBlockThreshold });
+            throw new Error('HarmCategory or HarmBlockThreshold not found in imported module');
+        }
+        console.log('[Init] GoogleGenerativeAI class and enums validated.');
 
         // Instantiate Client
         console.log('[Init] Instantiating GoogleGenerativeAI...');
