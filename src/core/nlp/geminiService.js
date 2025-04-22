@@ -1,79 +1,88 @@
-// DEVELOPMENT PHILOSOPHY: Simplify Code, Trust Gemini, Post-Process.\n// Primary logic in resolveQuery, formatData minimal, postProcess cleans up.\n// See BOT_CAPABILITIES.md for more details.\n\nconst config = require('../../config/config.js');
-console.log('*** DEBUG: Config at module load:', typeof config);
-if (typeof config === 'object' && config !== null) {
-    console.log('*** DEBUG: Config keys at load:', Object.keys(config));
-} else {
-    console.log('*** DEBUG: Config is NOT an object at load!');
-}
+// DEVELOPMENT PHILOSOPHY: Simplify Code, Trust Gemini, Post-Process.\n// Primary logic in resolveQuery, formatData minimal, postProcess cleans up.\n// See BOT_CAPABILITIES.md for more details.\n\n// --- Eager Initialization Approach ---
+console.log('--- Loading geminiService.js ---');
+const config = require('../../config/config.js'); // Require at top level
 const { escapeMarkdownV2 } = require('../services/escapeUtil');
 const fs = require('fs');
 const path = require('path');
 
-// --- Singleton Pattern --- (Keep getGeminiInstance unchanged)
-let GoogleGenAIClass = null;
-let genAIInstance = null;
-async function getGeminiInstance() {
-  // Add require inside function
-  const config = require('../../config/config.js');
+let genAIInstance = null;       // Module scope instance
+let safetySettings = null;      // Module scope safety settings
+let initializationPromise = null; // Promise to track initialization
 
-  // Return cached instance if available
-  if (genAIInstance) {
-    // console.log('Returning cached genAI instance');
-    return genAIInstance;
-  }
+/**
+ * Initializes the Gemini client and safety settings eagerly on module load.
+ */
+async function initializeGeminiAndSafetySettings() {
+    console.log('[Init] Attempting to initialize Gemini client and safety settings...');
+    if (genAIInstance) {
+        console.log('[Init] Gemini already initialized.');
+        return; // Already done or in progress via the promise
+    }
 
-  // Load the class if not already loaded
-  if (!GoogleGenAIClass) {
+    // Validate config existence early
+    if (!config || typeof config !== 'object') {
+        console.error('[Init] *** FATAL: Config object not available during initialization!', typeof config);
+        throw new Error('Config object not available during initialization.');
+    }
+    if (!config.gemini || !config.gemini.apiKey) {
+         console.error('[Init] *** FATAL: Gemini API Key missing in config during initialization!', config.gemini);
+         throw new Error('Missing GEMINI_API_KEY during initialization.');
+    }
+
     try {
-      console.log('Attempting dynamic import of @google/genai for class...');
-      const mod = await import('@google/genai');
-      // Use the correct class name identified from logs
-      GoogleGenAIClass = mod.GoogleGenAI;
-      if (!GoogleGenAIClass || typeof GoogleGenAIClass !== 'function') {
-           console.error('GoogleGenAI class not found or not a function after import.', mod);
-           throw new Error(`GoogleGenAI class not found or invalid type (${typeof GoogleGenAIClass}) in dynamically imported module.`);
-      }
-      console.log('GoogleGenAI class successfully loaded.');
-    } catch (error) {
-      console.error('Failed to dynamically import @google/genai:', error);
-      GoogleGenAIClass = null; // Reset on failure
-      throw error; // Propagate the error
-    }
-  }
+        console.log('[Init] Dynamically importing @google/genai...');
+        // Import both class and enums needed
+        const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = await import('@google/genai');
+        console.log('[Init] @google/genai imported successfully.');
 
-  // Instantiate and cache the instance
-  try {
-    // REMOVED: Debug logs for config inside instance
-    if (!config.gemini.apiKey) {
-      throw new Error('Missing required environment variable: GEMINI_API_KEY cannot instantiate');
-    }
-    console.log('Instantiating and caching GoogleGenAI instance using { apiKey: ... }');
-    genAIInstance = new GoogleGenAIClass({
-        apiKey: config.gemini.apiKey,
-        // apiEndpoint: 'generativelanguage.googleapis.com' // Keep endpoint if needed, but often optional
-    });
-    return genAIInstance;
-  } catch (error) {
-      console.error('Failed to instantiate GoogleGenAI:', error);
-      genAIInstance = null; // Reset on failure
-      throw error; // Propagate the error
-  }
-}
-// --- End Singleton Pattern ---
+        // Validate Class
+        if (!GoogleGenerativeAI || typeof GoogleGenerativeAI !== 'function') {
+             console.error('[Init] GoogleGenerativeAI class not found or not a function after import.', GoogleGenerativeAI);
+             throw new Error(`GoogleGenerativeAI class not found or invalid type (${typeof GoogleGenerativeAI})`);
+        }
+        console.log('[Init] GoogleGenerativeAI class validated.');
 
-// Define safety settings (can remain global, initialized lazily)
-let safetySettings = null;
-async function initializeSafetySettingsIfNeeded() {
-    if (!safetySettings) {
-        const { HarmCategory, HarmBlockThreshold } = await import('@google/genai');
+        // Instantiate Client
+        console.log('[Init] Instantiating GoogleGenerativeAI...');
+        // Assign to module-level variable
+        genAIInstance = new GoogleGenerativeAI({
+            apiKey: config.gemini.apiKey,
+        });
+        console.log('[Init] GoogleGenerativeAI instantiated successfully.');
+
+        // Initialize Safety Settings
+        console.log('[Init] Initializing safety settings...');
+        // Assign to module-level variable
         safetySettings = [
             { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
             { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
             { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
             { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
         ];
+        console.log('[Init] Safety settings initialized.');
+
+        console.log('[Init] Gemini client and safety settings initialized successfully.');
+
+    } catch (error) {
+        console.error('[Init] ****** Failed to initialize Gemini client or safety settings: ******', error);
+        genAIInstance = null; // Ensure instance is null on failure
+        safetySettings = null;
+        throw error; // Propagate error to reject the initializationPromise
     }
 }
+
+// Immediately invoke the initialization function and store the promise
+initializationPromise = initializeGeminiAndSafetySettings().catch(err => {
+    console.error("[Init] ****** CATCH BLOCK: Gemini Initialization FAILED ******", err.message);
+    // Ensure the promise remains rejected
+    initializationPromise = Promise.reject(err);
+    // Application WILL NOT WORK without Gemini, maybe exit? Or let requests fail.
+    // process.exit(1); // Optionally force exit
+    return Promise.reject(err); // Make sure caller sees rejection
+});
+
+// --- End Eager Initialization ---
+
 
 // --- Read Capabilities ---
 let botCapabilities = "Error loading capabilities...";
@@ -95,20 +104,25 @@ ${limitationsMatch ? limitationsMatch[1].trim() : 'Refer to BOT_CAPABILITIES.md'
     console.log("Successfully loaded and parsed bot capabilities for prompts.");
 } catch (err) {
     console.error("Error loading BOT_CAPABILITIES.md:", err);
-    // Use a fallback or handle the error appropriately
     botCapabilities = "Error loading capabilities. Essential functions: List Events, Get Event Details, List Guests. Limitations: Cannot manage users or settings.";
 }
 // --- End Read Capabilities ---
 
-/**\n * Primary function to resolve user query.\n * Determines if a tool call is needed or if a direct answer can be generated.\n * Outputs either JSON for a tool call OR the natural language direct answer.\n * @param {string} text - User's natural language query.\n * @param {object} context - Additional context (e.g., { events: [...] }).\n * @returns {Promise<object | string>} - JSON object for tool call OR string for direct answer.\n */
+/**
+ * Primary function to resolve user query.
+ * Uses the eagerly initialized Gemini instance.
+ */
 async function resolveQuery(text, context = {}) {
-    // Add require inside function
-    const config = require('../../config/config.js');
     try {
-        const genAI = await getGeminiInstance();
-        if (!genAI) throw new Error('Failed to retrieve Gemini AI instance.');
-        await initializeSafetySettingsIfNeeded();
-        const modelId = config.gemini.modelId || "gemini-2.0-flash";
+        // Wait for initialization to complete (or fail)
+        await initializationPromise;
+        // Check if initialization succeeded
+        if (!genAIInstance) {
+            console.error("resolveQuery: Gemini AI instance not available after initialization attempt.");
+            throw new Error('Gemini AI service is not initialized.'); // Throw specific error
+        }
+
+        const modelId = config.gemini.modelId || "gemini-2.0-flash"; // Use top-level config
 
         // Build Context String
         const availableEvents = context.events || [];
@@ -160,23 +174,22 @@ ${toolsDescription}
         `;
 
         console.log("ResolveQuery: Calling Gemini...");
-        const result = await genAI.models.generateContent({
-            model: modelId,
-            contents: [{ role: "user", parts: [{ text: mainPrompt }] }],
-            safetySettings: safetySettings,
-        });
-
-        const candidates = result?.candidates;
-        let responseText = candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        // Use the module-level instance and safety settings
+        const result = await genAIInstance.getGenerativeModel({ model: modelId, safetySettings }).generateContent(mainPrompt);
+        const response = result.response; // Access response directly in v1? Check docs/examples
+        let responseText = response?.text(); // Use text() method if available
 
         if (!responseText) {
-            console.error('ResolveQuery: No text response from Gemini.', JSON.stringify(result, null, 2));
-            return "Sorry, I encountered an issue processing your request."; // Default error text
+            responseText = response?.candidates?.[0]?.content?.parts?.[0]?.text?.trim(); // Fallback if text() not available/empty
+        }
+
+        if (!responseText) {
+            console.error('ResolveQuery: No text response from Gemini.', JSON.stringify(response, null, 2));
+            throw new Error("No response text received from Gemini."); // Throw specific error
         }
 
         console.log("ResolveQuery: Raw Gemini response:", responseText);
 
-        // Check if the response LOOKS like JSON for a tool call
         // Clean markdown fences FIRST, then check/parse
         const cleanedJson = responseText.replace(/^```(?:json)?\\s*|\\s*```$/g, '').trim();
         if (cleanedJson.startsWith('{') && cleanedJson.endsWith('}')) {
@@ -185,33 +198,47 @@ ${toolsDescription}
                 if (decision.action === 'TOOL_CALL' && decision.tool && decision.params) {
                     console.log("ResolveQuery: Decided TOOL_CALL:", decision);
                     return decision; // Return the JSON object
+                } else {
+                     // Looks like JSON but not a valid TOOL_CALL structure
+                     console.warn("ResolveQuery: Parsed JSON but not a valid TOOL_CALL structure:", decision);
+                     // Fall through to treat as direct answer
                 }
             } catch (e) {
-                // It looked like JSON but wasn't valid, treat as direct answer
                 console.warn("ResolveQuery: Response looked like JSON but failed to parse. Treating as direct answer.", e);
                 // Fall through to return responseText as direct answer
             }
         }
 
-        // If it wasn't valid JSON or didn't parse, assume it's a direct answer
+        // If it wasn't valid JSON or didn't parse as TOOL_CALL, assume it's a direct answer
         console.log("ResolveQuery: Treating response as DIRECT_ANSWER text.");
         return responseText; // Return the plain text
 
-    } catch (error) {
+  } catch (error) {
         console.error(`Error in resolveQuery: ${error.message}\\nStack: ${error.stack}`);
-        return `Sorry, an error occurred while processing your query: ${error.message}`;
+        // Check if error is from initialization promise
+        if (error.message.includes('initialization') || error.message.includes('Gemini AI service is not initialized')) {
+             return `Sorry, the AI service failed to start or is unavailable. Please notify the administrator.`;
+        }
+        // Return a generic error message for other issues
+        return `Sorry, an error occurred while processing your query. Please try again.`;
     }
 }
 
-/**\n * Formats raw data (typically from Luma API) into a basic structure.\n * Minimal prompt, assuming post-processing will handle final tone/markdown.\n * @param {object|array} data - The raw data.\n * @param {string} userQueryContext - Context for the formatting request.\n * @returns {Promise<string>} - Basic formatted text.\n */
+/**
+ * Formats raw data (typically from Luma API) into a basic structure.
+ * Uses the eagerly initialized Gemini instance.
+ */
 async function formatDataWithGemini(data, userQueryContext = "the user's request") {
-    // Add require inside function
-    const config = require('../../config/config.js');
     try {
-        const genAI = await getGeminiInstance();
-        if (!genAI) throw new Error('Failed to retrieve Gemini AI instance for formatting.');
-        await initializeSafetySettingsIfNeeded();
-        const modelId = config.gemini.modelId || "gemini-2.0-flash";
+        // Wait for initialization to complete (or fail)
+        await initializationPromise;
+        // Check if initialization succeeded
+        if (!genAIInstance) {
+            console.error("formatDataWithGemini: Gemini AI instance not available after initialization attempt.");
+            throw new Error('Gemini AI service is not initialized.'); // Throw specific error
+        }
+
+        const modelId = config.gemini.modelId || "gemini-2.0-flash"; // Use top-level config
 
         // Simplified prompt: Focus on structure, not tone/markdown
         const formatPrompt = `
@@ -230,50 +257,49 @@ Formatted Output:
 `;
 
         console.log("FormatData: Calling Gemini...");
-        const result = await genAI.models.generateContent({
-            model: modelId,
-            contents: [{ role: "user", parts: [{ text: formatPrompt }] }],
-            safetySettings: safetySettings,
-        });
-        const candidates = result?.candidates;
-        const formattedText = candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        // Use the module-level instance and safety settings
+        const result = await genAIInstance.getGenerativeModel({ model: modelId, safetySettings }).generateContent(formatPrompt);
+        const response = result.response;
+        let formattedText = response?.text(); // Use text() method if available
 
         if (!formattedText) {
-            console.warn("FormatData: No formatted text received. Returning raw data string.", JSON.stringify(result, null, 2));
+             formattedText = response?.candidates?.[0]?.content?.parts?.[0]?.text?.trim(); // Fallback
+        }
+
+        if (!formattedText) {
+            console.warn("FormatData: No formatted text received. Returning raw data string.", JSON.stringify(response, null, 2));
             return `Data received but could not be formatted: ${JSON.stringify(data)}`; // Fallback
         }
         return formattedText;
     } catch (error) {
         console.error(`Error in formatDataWithGemini: ${error.message}\\nStack: ${error.stack}`);
+         if (error.message.includes('initialization') || error.message.includes('Gemini AI service is not initialized')) {
+             return `Error formatting data: AI service unavailable.`;
+        }
         return `Error formatting data: ${error.message}. Raw data: ${JSON.stringify(data)}`;
     }
 }
 
-// Keep postProcessResponse function as defined previously
+/**
+ * Post-processes a response string for tone and formatting.
+ * Uses the eagerly initialized Gemini instance.
+ */
 async function postProcessResponse(inputText) {
-    // Add require inside function
-    const config = require('../../config/config.js');
     if (!inputText || typeof inputText !== 'string') {
         console.warn("PostProcess: Received invalid input, skipping.");
         return inputText; // Return input as is if invalid
     }
 
     try {
-        const genAI = await getGeminiInstance();
-        if (!genAI) throw new Error('Failed to retrieve Gemini AI instance for post-processing.');
-
-        // Initialize safety settings if needed (can reuse the global let)
-        if (!safetySettings) {
-            const { HarmCategory, HarmBlockThreshold } = await import('@google/genai');
-            safetySettings = [
-                { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-                { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-                { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-                { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-            ];
+        // Wait for initialization to complete (or fail)
+        await initializationPromise;
+        // Check if initialization succeeded
+        if (!genAIInstance) {
+            console.error("postProcessResponse: Gemini AI instance not available after initialization attempt.");
+            throw new Error('Gemini AI service is not initialized.'); // Throw specific error
         }
 
-        const modelId = config.gemini.modelId || "gemini-2.0-flash";
+        const modelId = config.gemini.modelId || "gemini-2.0-flash"; // Use top-level config
 
         const postProcessPrompt = `
 Review the following text, which is an AI assistant's draft response for Telegram. Your task is to refine it into clean, natural language suitable for a helpful secretary communicating via chat.
@@ -294,33 +320,40 @@ ${inputText}
 `;
 
         console.log("PostProcess: Calling Gemini for cleanup...");
-        const result = await genAI.models.generateContent({
-            model: modelId,
-            contents: [{ role: "user", parts: [{ text: postProcessPrompt }] }],
-            safetySettings: safetySettings,
-        });
-
-        const candidates = result?.candidates;
-        const refinedText = candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+         // Use the module-level instance and safety settings
+        const result = await genAIInstance.getGenerativeModel({ model: modelId, safetySettings }).generateContent(postProcessPrompt);
+        const response = result.response;
+        let refinedText = response?.text(); // Use text() method if available
 
         if (!refinedText) {
-            console.warn("PostProcess: No refined text received from Gemini. Returning original text.", JSON.stringify(result, null, 2));
+             refinedText = response?.candidates?.[0]?.content?.parts?.[0]?.text?.trim(); // Fallback
+        }
+
+        if (!refinedText) {
+            console.warn("PostProcess: No refined text received from Gemini. Returning original text.", JSON.stringify(response, null, 2));
             return inputText; // Fallback to original text
         }
 
         console.log("PostProcess: Cleanup successful.");
         return refinedText;
 
-    } catch (error) {
+  } catch (error) {
         console.error(`Error in postProcessResponse: ${error.message}\\nStack: ${error.stack}`);
-        // Fallback to original text on error
+         if (error.message.includes('initialization') || error.message.includes('Gemini AI service is not initialized')) {
+            console.warn("PostProcess: Cleanup skipped, AI service unavailable.");
+            return inputText; // Return original text if AI unavailable
+        }
+        // Fallback to original text on other errors during cleanup
         console.warn("PostProcess: Error during cleanup, returning original text.");
         return inputText;
-    }
+  }
 }
+
+// Remove getGeminiInstance and initializeSafetySettingsIfNeeded functions
 
 module.exports = {
   resolveQuery,       // New primary function
   formatDataWithGemini, // Kept for formatting tool results
-  postProcessResponse // Kept for final cleanup
+  postProcessResponse, // Kept for final cleanup
+  initializationPromise // Expose promise for potential checks elsewhere? Maybe not needed.
 }; 
