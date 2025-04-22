@@ -12,50 +12,50 @@ let GoogleGenAIClass = null;
 let genAIInstance = null;
 let safetySettings = null;
 
-function getGenAIInstanceAndSettings() {
+async function getGenAIInstanceAndSettings() {
   // Return cached instance if available
   if (genAIInstance) {
-    // console.log('Returning cached genAI instance and settings');
     return { genAIInstance, safetySettings };
   }
 
-  // Attempt to load using require()
   try {
-    console.log('Attempting require("@google/genai")');
-    const genaiModule = require('@google/genai');
-    console.log('Successfully required @google/genai');
+    console.log('Attempting dynamic import of @google/genai');
+    const genaiModule = await import('@google/genai');
+    console.log('Successfully imported @google/genai');
+    console.log('Module structure:', Object.keys(genaiModule));
 
-    // Check for constructor directly or under .default
-    let GenAIConstructor = genaiModule?.GoogleGenerativeAI;
+    // Check for constructor directly
+    let GenAIConstructor = genaiModule.GoogleGenerativeAI;
     if (!GenAIConstructor || typeof GenAIConstructor !== 'function') {
         console.log('GoogleGenerativeAI not found directly, checking default...');
-        GenAIConstructor = genaiModule?.default?.GoogleGenerativeAI;
+        GenAIConstructor = genaiModule.default?.GoogleGenerativeAI;
     }
 
-    // Check for enums directly or under .default
-    let HarmCategory = genaiModule?.HarmCategory;
-    let HarmBlockThreshold = genaiModule?.HarmBlockThreshold;
+    // Check for enums directly
+    let HarmCategory = genaiModule.HarmCategory;
+    let HarmBlockThreshold = genaiModule.HarmBlockThreshold;
     if (!HarmCategory || !HarmBlockThreshold) {
-         console.log('Enums not found directly, checking default...');
-         HarmCategory = genaiModule?.default?.HarmCategory;
-         HarmBlockThreshold = genaiModule?.default?.HarmBlockThreshold;
+        console.log('Enums not found directly, checking default...');
+        HarmCategory = genaiModule.default?.HarmCategory;
+        HarmBlockThreshold = genaiModule.default?.HarmBlockThreshold;
     }
 
     // Validate constructor
     if (!GenAIConstructor || typeof GenAIConstructor !== 'function') {
-        console.error('Failed to find GoogleGenerativeAI constructor via require() or require().default');
+        console.error('Failed to find GoogleGenerativeAI constructor');
         throw new Error('GoogleGenerativeAI constructor not found');
     }
+
     // Validate enums
     if (!HarmCategory || !HarmBlockThreshold) {
-        console.error('Failed to find HarmCategory/HarmBlockThreshold via require() or require().default');
+        console.error('Failed to find HarmCategory/HarmBlockThreshold');
         throw new Error('GoogleGenerativeAI safety enums not found');
     }
 
-    console.log('GoogleGenerativeAI constructor and enums found.');
-    GoogleGenAIClass = GenAIConstructor; // Store the found class
+    console.log('GoogleGenerativeAI constructor and enums found');
+    GoogleGenAIClass = GenAIConstructor;
 
-    // Initialize Safety Settings using found enums
+    // Initialize Safety Settings
     console.log('Initializing safety settings...');
     safetySettings = [
         { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
@@ -63,27 +63,26 @@ function getGenAIInstanceAndSettings() {
         { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
         { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
     ];
-    console.log('Safety settings initialized.');
+    console.log('Safety settings initialized');
 
     // Instantiate Client
     if (!config.gemini.apiKey) {
-      throw new Error('Missing required environment variable: GEMINI_API_KEY cannot instantiate');
+        throw new Error('Missing required environment variable: GEMINI_API_KEY');
     }
-    console.log('Instantiating and caching GoogleGenAI instance...');
+    console.log('Instantiating GoogleGenAI instance...');
     genAIInstance = new GoogleGenAIClass({
         apiKey: config.gemini.apiKey,
     });
 
-    console.log('Gemini client instantiated and cached.');
+    console.log('Gemini client instantiated and cached');
     return { genAIInstance, safetySettings };
 
   } catch (error) {
-    console.error('Failed during require() or initialization:', error);
-    genAIInstance = null; // Reset on failure
+    console.error('Failed during dynamic import or initialization:', error);
+    genAIInstance = null;
     safetySettings = null;
     GoogleGenAIClass = null;
-    // Throw a specific error or return null/undefined? Re-throwing for now.
-    throw new Error(`Failed to get/initialize Gemini instance: ${error.message}`);
+    throw new Error(`Failed to initialize Gemini: ${error.message}`);
   }
 }
 // --- End Singleton Pattern ---
@@ -123,7 +122,7 @@ async function resolveQuery(text, context = {}) {
     let client, settings;
     try {
         // Get instance and settings (initializes on first call)
-        ({ genAIInstance: client, safetySettings: settings } = getGenAIInstanceAndSettings());
+        ({ genAIInstance: client, safetySettings: settings } = await getGenAIInstanceAndSettings());
 
         const modelId = config.gemini.modelId || "gemini-2.0-flash"; // Use top-level config
 
@@ -222,7 +221,7 @@ ${toolsDescription}
 async function formatDataWithGemini(data, userQueryContext = "the user's request") {
     let client, settings;
     try {
-        ({ genAIInstance: client, safetySettings: settings } = getGenAIInstanceAndSettings());
+        ({ genAIInstance: client, safetySettings: settings } = await getGenAIInstanceAndSettings());
         const modelId = config.gemini.modelId || "gemini-2.0-flash";
 
         const formatPrompt = `
@@ -270,7 +269,7 @@ async function postProcessResponse(inputText) {
     }
     let client, settings;
     try {
-        ({ genAIInstance: client, safetySettings: settings } = getGenAIInstanceAndSettings());
+        ({ genAIInstance: client, safetySettings: settings } = await getGenAIInstanceAndSettings());
         const modelId = config.gemini.modelId || "gemini-2.0-flash";
 
         const postProcessPrompt = `
@@ -320,4 +319,4 @@ module.exports = {
   formatDataWithGemini,
   postProcessResponse,
   // No longer exposing initializationPromise
-}; 
+}; n
