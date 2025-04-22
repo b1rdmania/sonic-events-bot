@@ -35,6 +35,19 @@ async function initializeGeminiAndSafetySettings() {
         const genaiModule = await import('@google/genai');
         console.log('[Init] @google/genai imported successfully.');
 
+        // Log the structure of the imported module
+        console.log('[Init] Structure of imported genaiModule:', typeof genaiModule);
+        if (genaiModule) {
+            console.log('[Init] Keys of genaiModule:', Object.keys(genaiModule));
+            // Specifically check for 'default' and 'GoogleGenerativeAI' keys
+            console.log('[Init] Has default key?', genaiModule.hasOwnProperty('default'));
+            console.log('[Init] Has GoogleGenerativeAI key?', genaiModule.hasOwnProperty('GoogleGenerativeAI'));
+             if (genaiModule.default) {
+                 console.log('[Init] Keys of genaiModule.default:', Object.keys(genaiModule.default));
+                 console.log('[Init] Has GoogleGenerativeAI key on default?', genaiModule.default.hasOwnProperty('GoogleGenerativeAI'));
+             }
+        }
+
         // Access exports via .default
         const GoogleGenerativeAI = genaiModule.default?.GoogleGenerativeAI;
         const HarmCategory = genaiModule.default?.HarmCategory;
