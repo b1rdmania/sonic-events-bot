@@ -12,43 +12,65 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/ge
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+console.log('=== Gemini Service Initialization ===');
+console.log('Current directory:', __dirname);
+console.log('Config loaded:', {
+  hasApiKey: !!config.gemini.apiKey,
+  modelId: config.gemini.modelId
+});
+
 // --- Lazy Loading Singleton Pattern ---
 let genAIInstance = null;
 let safetySettings = null;
 
 async function getGenAIInstanceAndSettings() {
+  console.log('\n=== getGenAIInstanceAndSettings called ===');
+  
   // Return cached instance if available
   if (genAIInstance) {
+    console.log('Returning cached instance');
     return { genAIInstance, safetySettings };
   }
 
   try {
-    console.log('Initializing Gemini client...');
+    console.log('Initializing new Gemini client...');
+    console.log('Checking for required dependencies...');
+    
+    // Log the imported module structure
+    console.log('GoogleGenerativeAI type:', typeof GoogleGenerativeAI);
+    console.log('HarmCategory type:', typeof HarmCategory);
+    console.log('HarmBlockThreshold type:', typeof HarmBlockThreshold);
     
     // Initialize Safety Settings
-    console.log('Initializing safety settings...');
+    console.log('\nInitializing safety settings...');
     safetySettings = [
       { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
       { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
       { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
       { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
     ];
-    console.log('Safety settings initialized');
+    console.log('Safety settings initialized:', safetySettings);
 
     // Instantiate Client
     if (!config.gemini.apiKey) {
+      console.error('Missing GEMINI_API_KEY in config');
       throw new Error('Missing required environment variable: GEMINI_API_KEY');
     }
-    console.log('Instantiating GoogleGenAI instance...');
+    
+    console.log('\nInstantiating GoogleGenAI instance...');
+    console.log('API Key length:', config.gemini.apiKey.length);
     genAIInstance = new GoogleGenerativeAI({
       apiKey: config.gemini.apiKey,
     });
+    console.log('Gemini client instantiated successfully');
 
-    console.log('Gemini client instantiated and cached');
     return { genAIInstance, safetySettings };
 
   } catch (error) {
-    console.error('Failed during initialization:', error);
+    console.error('\n=== Error in getGenAIInstanceAndSettings ===');
+    console.error('Error type:', error.constructor.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
     genAIInstance = null;
     safetySettings = null;
     throw new Error(`Failed to initialize Gemini: ${error.message}`);
@@ -56,12 +78,25 @@ async function getGenAIInstanceAndSettings() {
 }
 
 // --- Read Capabilities ---
+console.log('\n=== Loading Bot Capabilities ===');
 let botCapabilities = "Error loading capabilities...";
 try {
     const capabilitiesPath = path.join(__dirname, '..', '..', '..', 'BOT_CAPABILITIES.md');
+    console.log('Looking for capabilities file at:', capabilitiesPath);
+    
+    if (!fs.existsSync(capabilitiesPath)) {
+        console.error('BOT_CAPABILITIES.md not found at:', capabilitiesPath);
+        throw new Error('BOT_CAPABILITIES.md not found');
+    }
+    
     botCapabilities = fs.readFileSync(capabilitiesPath, 'utf8');
+    console.log('Successfully read capabilities file');
+    
     const capabilitiesMatch = botCapabilities.match(/## Current Capabilities.*?\(Using Luma API\)(.*?)(?=## Limitations|\Z)/s);
     const limitationsMatch = botCapabilities.match(/## Limitations - What the Bot CANNOT Do(.*?)(?=##|$)/s);
+
+    console.log('Capabilities match found:', !!capabilitiesMatch);
+    console.log('Limitations match found:', !!limitationsMatch);
 
     const extractedCapabilities = capabilitiesMatch ? capabilitiesMatch[2].trim() : 'Refer to BOT_CAPABILITIES.md';
     const extractedLimitations = limitationsMatch ? limitationsMatch[1].trim() : 'Refer to BOT_CAPABILITIES.md';
@@ -73,9 +108,12 @@ ${extractedCapabilities}
 Limitations (What you CANNOT do):
 ${extractedLimitations}
     `.trim();
-    console.log("Successfully loaded and parsed bot capabilities for prompts.");
+    console.log("Successfully parsed bot capabilities");
 } catch (err) {
-    console.error("Error loading BOT_CAPABILITIES.md:", err);
+    console.error("\n=== Error loading capabilities ===");
+    console.error('Error type:', err.constructor.name);
+    console.error('Error message:', err.message);
+    console.error('Error stack:', err.stack);
     botCapabilities = "Error loading capabilities. Essential functions: List Events, Get Event Details, List Guests. Limitations: Cannot manage users or settings.";
 }
 
