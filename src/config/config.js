@@ -1,7 +1,6 @@
-import dotenv from 'dotenv';
-dotenv.config();
+require('dotenv').config();
 
-export const config = {
+const config = {
     telegram: {
         token: process.env.BOT_TOKEN,
         agentChannel: process.env.AGENT_CHANNEL
@@ -18,4 +17,6 @@ export const config = {
         name: 'Sonic Events Bot',
         version: '1.0.0'
     }
-}; 
+};
+
+module.exports = config; 

@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "Telegram bot for Sonic Events management",
   "main": "src/bot/index.js",
-  "type": "module",
   "scripts": {
     "start": "node src/bot/index.js",
     "dev": "nodemon src/bot/index.js"

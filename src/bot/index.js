@@ -1,94 +1,84 @@
-import { config } from '../config/config.js';
-import { Telegraf } from 'telegraf';
-import { linkCommandHandler } from './commands/link.js';
-import { command as eventsCommand, handler as eventsHandler } from './commands/events.js';
-import { command as guestsCommand, handler as guestsHandler } from './commands/guests.js';
-import { command as approveCommand, handler as approveHandler } from './commands/approve.js';
-import { command as rejectCommand, handler as rejectHandler } from './commands/reject.js';
-import { messageHandler, shouldRespond } from './handlers/messageHandler.js';
-import { requireLink } from './middleware/auth.js';
+const { Telegraf } = require('telegraf');
+const config = require('../config/config.js');
+const geminiService = require('../core/nlp/geminiService');
 
-console.log('=== Bot Initialization Started ===');
-console.log('Environment:', process.env.NODE_ENV);
-console.log('Config loaded:', {
-  hasBotToken: !!config.telegram.botToken,
-  hasGeminiKey: !!config.gemini.apiKey,
-  hasLumaKey: !!config.luma.apiKey
-});
+console.log('=== Bot Initialization ===');
+console.log('Starting with configuration:');
+console.log('- BOT_TOKEN exists:', !!config.telegram.token);
+console.log('- GEMINI_API_KEY exists:', !!config.gemini.apiKey);
 
 // Basic validation
-if (!config.telegram.botToken) {
+if (!config.telegram.token) {
   console.error('Error: BOT_TOKEN is not defined in environment variables.');
   process.exit(1);
 }
 
 // Initialize the bot
-console.log('Initializing Telegraf bot...');
-const bot = new Telegraf(config.telegram.botToken);
-console.log('Telegraf bot initialized');
+const bot = new Telegraf(config.telegram.token);
 
 // Middleware for basic logging
 bot.use(async (ctx, next) => {
   const startTime = Date.now();
-  await next(); // Continue processing
+  console.log(`Received update: ${ctx.updateType}`);
+  await next();
   const ms = Date.now() - startTime;
-  const chatType = ctx.chat?.type || 'unknown';
-  const userId = ctx.from?.id;
-  console.log(`Response time for ${ctx.updateType} [${chatType} ${ctx.chat?.id || 'N/A'} / User ${userId}]: ${ms}ms`);
+  console.log(`Response time for ${ctx.updateType}: ${ms}ms`);
 });
 
-// --- Command Handlers Will Be Registered Here ---
-console.log('Registering command handlers...');
-bot.command('start', (ctx) => ctx.reply('Hello! I am the Luma Event Intelligence Bot. Use /link <YOUR_LUMA_API_KEY> to get started.'));
-bot.command('link', linkCommandHandler); // Register the link command handler
-bot.command(eventsCommand, ...eventsHandler); // Register the events command with middleware
-bot.command(guestsCommand, ...guestsHandler); // Register the guests command with middleware
-bot.command(approveCommand, ...approveHandler); // Register the approve command
-bot.command(rejectCommand, ...rejectHandler); // Register the reject command
-console.log('Command handlers registered');
+// Basic commands
+bot.start((ctx) => {
+  console.log('Start command received');
+  return ctx.reply('Hello! I am Sonic Events Bot. I can help you manage your Luma events.');
+});
 
-// Register the general message handler
-console.log('Registering message handler...');
-bot.on('text', shouldRespond, requireLink, messageHandler); // Correctly register middleware and handler
-console.log('Message handler registered');
+bot.help((ctx) => {
+  console.log('Help command received');
+  return ctx.reply(
+    'I can help you manage Luma events.\n\n' +
+    'Use these commands:\n' +
+    '/start - Start the bot\n' +
+    '/help - Show this help message'
+  );
+});
+
+// Simple text response using Gemini
+bot.on('text', async (ctx) => {
+  console.log('Text message received:', ctx.message.text);
+  try {
+    await ctx.reply('Thinking...');
+    const prompt = `You are a helpful assistant for a Telegram bot. The user sent this message: "${ctx.message.text}". Respond in a friendly and concise way.`;
+    const response = await geminiService.generateResponse(prompt);
+    return ctx.reply(response);
+  } catch (error) {
+    console.error('Error processing message:', error);
+    return ctx.reply('Sorry, I encountered an error processing your message.');
+  }
+});
 
 // Generic error handler
 bot.catch((err, ctx) => {
   console.error(`Error processing update ${ctx.update.update_id}:`, err);
-  // Attempt to notify the user, but be careful in groups
-  if (ctx.chat?.type === 'private') {
-    ctx.reply('Sorry, an unexpected error occurred. Please try again later.').catch(e => console.error('Failed to send error message to user:', e));
-  }
+  return ctx.reply('Sorry, an error occurred. Please try again later.');
 });
 
-// Function to launch the bot
-async function startBot() {
-  try {
-    console.log('Starting bot...');
-    // Launch the bot
-    await bot.launch();
-    console.log('Bot started successfully!');
-
-    // Enable graceful stop
-    process.once('SIGINT', async () => {
-      console.log('SIGINT received, stopping bot...');
-      bot.stop('SIGINT');
-      console.log('Bot stopped.');
-      process.exit(0);
-    });
-    process.once('SIGTERM', async () => {
-      console.log('SIGTERM received, stopping bot...');
-      bot.stop('SIGTERM');
-      console.log('Bot stopped.');
-      process.exit(0);
-    });
-
-  } catch (error) {
-    console.error('Failed to start bot:', error);
+// Start the bot
+console.log('Starting bot...');
+bot.launch()
+  .then(() => {
+    console.log('Bot is running!');
+  })
+  .catch(err => {
+    console.error('Failed to start bot:', err);
     process.exit(1);
-  }
-}
+  });
 
-// Start the bot process
-console.log('=== Starting Bot Process ===');
-startBot(); 
+// Enable graceful stop
+process.once('SIGINT', () => {
+  console.log('SIGINT received, stopping bot...');
+  bot.stop('SIGINT');
+});
+
+process.once('SIGTERM', () => {
+  console.log('SIGTERM received, stopping bot...');
+  bot.stop('SIGTERM');
+}); 

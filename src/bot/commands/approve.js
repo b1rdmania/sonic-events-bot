@@ -1,7 +1,7 @@
 // const lumaClient = require('../../core/luma/client'); // No longer needed
-const { requireLink } = require('../middleware/auth');
+import { requireLink } from '../middleware/auth.js';
 // const prisma = require('../../core/db/prisma'); // No longer needed directly for audit
-const guestService = require('../../core/services/guestService');
+import { guestService } from '../../core/services/guestService.js';
 
 const approveCommandHandler = async (ctx) => {
   const { encryptedApiKey, org } = ctx.state;
@@ -46,7 +46,5 @@ const approveCommandHandler = async (ctx) => {
   }
 };
 
-module.exports = {
-  command: 'approve',
-  handler: [requireLink, approveCommandHandler],
-}; 
+export const command = 'approve';
+export const handler = [requireLink, approveCommandHandler]; 

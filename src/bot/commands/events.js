@@ -1,6 +1,6 @@
 // const lumaClient = require('../../core/luma/client'); // No longer needed directly
-const { requireLink } = require('../middleware/auth');
-const eventService = require('../../core/services/eventService'); // Import the service
+import { requireLink } from '../middleware/auth.js';
+import { eventService } from '../../core/services/eventService.js';
 
 const eventsCommandHandler = async (ctx) => {
   const { encryptedApiKey } = ctx.state; // Org name is handled by the service now
@@ -20,7 +20,5 @@ const eventsCommandHandler = async (ctx) => {
   }
 };
 
-module.exports = {
-  command: 'events',
-  handler: [requireLink, eventsCommandHandler],
-}; 
+export const command = 'events';
+export const handler = [requireLink, eventsCommandHandler]; 
