@@ -1,6 +1,5 @@
 import { config } from '../config/config.js';
 import { Telegraf } from 'telegraf';
-import { prisma } from '../core/db/prisma.js';
 import { linkCommandHandler } from './commands/link.js';
 import { command as eventsCommand, handler as eventsHandler } from './commands/events.js';
 import { command as guestsCommand, handler as guestsHandler } from './commands/guests.js';
@@ -9,6 +8,14 @@ import { command as rejectCommand, handler as rejectHandler } from './commands/r
 import { messageHandler, shouldRespond } from './handlers/messageHandler.js';
 import { requireLink } from './middleware/auth.js';
 
+console.log('=== Bot Initialization Started ===');
+console.log('Environment:', process.env.NODE_ENV);
+console.log('Config loaded:', {
+  hasBotToken: !!config.telegram.botToken,
+  hasGeminiKey: !!config.gemini.apiKey,
+  hasLumaKey: !!config.luma.apiKey
+});
+
 // Basic validation
 if (!config.telegram.botToken) {
   console.error('Error: BOT_TOKEN is not defined in environment variables.');
@@ -16,7 +23,9 @@ if (!config.telegram.botToken) {
 }
 
 // Initialize the bot
+console.log('Initializing Telegraf bot...');
 const bot = new Telegraf(config.telegram.botToken);
+console.log('Telegraf bot initialized');
 
 // Middleware for basic logging
 bot.use(async (ctx, next) => {
@@ -29,16 +38,19 @@ bot.use(async (ctx, next) => {
 });
 
 // --- Command Handlers Will Be Registered Here ---
+console.log('Registering command handlers...');
 bot.command('start', (ctx) => ctx.reply('Hello! I am the Luma Event Intelligence Bot. Use /link <YOUR_LUMA_API_KEY> to get started.'));
 bot.command('link', linkCommandHandler); // Register the link command handler
 bot.command(eventsCommand, ...eventsHandler); // Register the events command with middleware
 bot.command(guestsCommand, ...guestsHandler); // Register the guests command with middleware
 bot.command(approveCommand, ...approveHandler); // Register the approve command
 bot.command(rejectCommand, ...rejectHandler); // Register the reject command
+console.log('Command handlers registered');
 
 // Register the general message handler
-// Apply middleware and the handler function individually
+console.log('Registering message handler...');
 bot.on('text', shouldRespond, requireLink, messageHandler); // Correctly register middleware and handler
+console.log('Message handler registered');
 
 // Generic error handler
 bot.catch((err, ctx) => {
@@ -52,10 +64,6 @@ bot.catch((err, ctx) => {
 // Function to launch the bot
 async function startBot() {
   try {
-    console.log('Connecting to database...');
-    await prisma.$connect();
-    console.log('Database connected successfully.');
-
     console.log('Starting bot...');
     // Launch the bot
     await bot.launch();
@@ -65,24 +73,22 @@ async function startBot() {
     process.once('SIGINT', async () => {
       console.log('SIGINT received, stopping bot...');
       bot.stop('SIGINT');
-      await prisma.$disconnect();
-      console.log('Bot stopped and database disconnected.');
+      console.log('Bot stopped.');
       process.exit(0);
     });
     process.once('SIGTERM', async () => {
       console.log('SIGTERM received, stopping bot...');
       bot.stop('SIGTERM');
-      await prisma.$disconnect();
-      console.log('Bot stopped and database disconnected.');
+      console.log('Bot stopped.');
       process.exit(0);
     });
 
   } catch (error) {
-    console.error('Failed to start bot or connect to database:', error);
-    await prisma.$disconnect().catch(e => console.error('Failed to disconnect database during startup error:', e));
+    console.error('Failed to start bot:', error);
     process.exit(1);
   }
 }
 
 // Start the bot process
+console.log('=== Starting Bot Process ===');
 startBot(); 
