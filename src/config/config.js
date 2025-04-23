@@ -1,28 +1,21 @@
-require('dotenv').config();
+import dotenv from 'dotenv';
+dotenv.config();
 
-const config = {
+export const config = {
     telegram: {
-        botToken: process.env.BOT_TOKEN,
-        agentChannel: process.env.AGENT_CHANNEL // We'll add this to .env later
-    },
-    openai: {
-        apiKey: process.env.OPENAI_API_KEY,
-        model: 'gpt-4'
+        token: process.env.BOT_TOKEN,
+        agentChannel: process.env.AGENT_CHANNEL
     },
     gemini: {
         apiKey: process.env.GEMINI_API_KEY,
-        modelId: process.env.GEMINI_MODEL_ID || 'gemini-2.0-flash' // Default model
+        modelId: 'gemini-2.0-flash'
     },
-    database: {
-        url: process.env.DATABASE_URL
-    },
-    security: {
-        encryptionKey: process.env.ENCRYPTION_KEY
+    luma: {
+        apiKey: process.env.LUMA_API_KEY,
+        apiUrl: 'https://api.luma.com/v1'
     },
     bot: {
-        name: 'CoinWings',
+        name: 'Sonic Events Bot',
         version: '1.0.0'
     }
-};
-
-module.exports = config; 
+}; 

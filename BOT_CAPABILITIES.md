@@ -1,14 +1,14 @@
 # Sonic World Events Bot - Capabilities and Limitations
 
-## Development Philosophy: Prompt Refinement First
+## Development Philosophy: Simplify Code, Trust Gemini, Post-Process
 
-This bot prioritizes using natural language understanding and generation via Google Gemini. When adding features or improving interactions:
+This bot follows these core principles:
 
-*   **Refine Prompts:** The primary approach is to refine the prompts given to the LLM to elicit the desired behavior, understanding, or response format.
-*   **Avoid Hardcoding:** We aim to minimize hardcoded logic or complex state management for conversational flow, relying instead on the LLM's ability to understand context and instructions.
-*   **Minimize Prescriptive Formatting:** Instructions, especially for output formatting, should guide the LLM towards clarity and naturalness rather than enforcing rigid, specific markdown structures.
+1.  **Simplify Code:** Minimize intermediate steps, routing logic, and state management in the Javascript code.
+2.  **Trust Gemini's Reasoning:** Rely on a primary Gemini call to understand user intent, determine the necessary action (direct answer vs. tool call), and generate direct answers or tool specifications.
+3.  **Post-Process for Presentation:** Use a dedicated, final post-processing step (another Gemini call) to ensure the output text meets the desired conversational tone and minimal Markdown requirements for Telegram.
 
-This approach aims for flexibility and a more natural user experience.
+This approach prioritizes leveraging the LLM's capabilities and separating core logic from final presentation refinement.
 
 ## Core Purpose
 

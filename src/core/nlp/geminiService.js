@@ -2,13 +2,17 @@
 // Primary logic in resolveQuery, formatData minimal, postProcess cleans up.
 // See BOT_CAPABILITIES.md for more details.
 
-const config = require('../../config/config.js'); // Top-level require
-const { escapeMarkdownV2 } = require('../services/escapeUtil');
-const fs = require('fs');
-const path = require('path');
+import { config } from '../../config/config.js';
+import { escapeMarkdownV2 } from '../services/escapeUtil.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/genai';
 
-// --- Lazy Loading Singleton Pattern using require() ---
-let GoogleGenAIClass = null;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// --- Lazy Loading Singleton Pattern ---
 let genAIInstance = null;
 let safetySettings = null;
 
@@ -19,81 +23,43 @@ async function getGenAIInstanceAndSettings() {
   }
 
   try {
-    console.log('Attempting dynamic import of @google/genai');
-    const genaiModule = await import('@google/genai');
-    console.log('Successfully imported @google/genai');
-    console.log('Module structure:', Object.keys(genaiModule));
-
-    // Check for constructor directly
-    let GenAIConstructor = genaiModule.GoogleGenerativeAI;
-    if (!GenAIConstructor || typeof GenAIConstructor !== 'function') {
-        console.log('GoogleGenerativeAI not found directly, checking default...');
-        GenAIConstructor = genaiModule.default?.GoogleGenerativeAI;
-    }
-
-    // Check for enums directly
-    let HarmCategory = genaiModule.HarmCategory;
-    let HarmBlockThreshold = genaiModule.HarmBlockThreshold;
-    if (!HarmCategory || !HarmBlockThreshold) {
-        console.log('Enums not found directly, checking default...');
-        HarmCategory = genaiModule.default?.HarmCategory;
-        HarmBlockThreshold = genaiModule.default?.HarmBlockThreshold;
-    }
-
-    // Validate constructor
-    if (!GenAIConstructor || typeof GenAIConstructor !== 'function') {
-        console.error('Failed to find GoogleGenerativeAI constructor');
-        throw new Error('GoogleGenerativeAI constructor not found');
-    }
-
-    // Validate enums
-    if (!HarmCategory || !HarmBlockThreshold) {
-        console.error('Failed to find HarmCategory/HarmBlockThreshold');
-        throw new Error('GoogleGenerativeAI safety enums not found');
-    }
-
-    console.log('GoogleGenerativeAI constructor and enums found');
-    GoogleGenAIClass = GenAIConstructor;
-
+    console.log('Initializing Gemini client...');
+    
     // Initialize Safety Settings
     console.log('Initializing safety settings...');
     safetySettings = [
-        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+      { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+      { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+      { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+      { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
     ];
     console.log('Safety settings initialized');
 
     // Instantiate Client
     if (!config.gemini.apiKey) {
-        throw new Error('Missing required environment variable: GEMINI_API_KEY');
+      throw new Error('Missing required environment variable: GEMINI_API_KEY');
     }
     console.log('Instantiating GoogleGenAI instance...');
-    genAIInstance = new GoogleGenAIClass({
-        apiKey: config.gemini.apiKey,
+    genAIInstance = new GoogleGenerativeAI({
+      apiKey: config.gemini.apiKey,
     });
 
     console.log('Gemini client instantiated and cached');
     return { genAIInstance, safetySettings };
 
   } catch (error) {
-    console.error('Failed during dynamic import or initialization:', error);
+    console.error('Failed during initialization:', error);
     genAIInstance = null;
     safetySettings = null;
-    GoogleGenAIClass = null;
     throw new Error(`Failed to initialize Gemini: ${error.message}`);
   }
 }
-// --- End Singleton Pattern ---
 
-
-// --- Read Capabilities --- (Keep as is, uses fs sync)
+// --- Read Capabilities ---
 let botCapabilities = "Error loading capabilities...";
 try {
     const capabilitiesPath = path.join(__dirname, '..', '..', '..', 'BOT_CAPABILITIES.md');
     botCapabilities = fs.readFileSync(capabilitiesPath, 'utf8');
-    // Use simpler regex without capturing groups if only trimming is needed
     const capabilitiesMatch = botCapabilities.match(/## Current Capabilities.*?\(Using Luma API\)(.*?)(?=## Limitations|\Z)/s);
     const limitationsMatch = botCapabilities.match(/## Limitations - What the Bot CANNOT Do(.*?)(?=##|$)/s);
 
@@ -112,7 +78,6 @@ ${extractedLimitations}
     console.error("Error loading BOT_CAPABILITIES.md:", err);
     botCapabilities = "Error loading capabilities. Essential functions: List Events, Get Event Details, List Guests. Limitations: Cannot manage users or settings.";
 }
-// --- End Read Capabilities ---
 
 /**
  * Primary function to resolve user query.
@@ -314,9 +279,8 @@ ${inputText}
   }
 }
 
-module.exports = {
+export {
   resolveQuery,
   formatDataWithGemini,
-  postProcessResponse,
-  // No longer exposing initializationPromise
-}; n
+  postProcessResponse
+};

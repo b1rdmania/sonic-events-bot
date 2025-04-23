@@ -1,15 +1,13 @@
-const config = require('../config/config.js');
-const { Telegraf } = require('telegraf');
-const prisma = require('../core/db/prisma'); // Import Prisma client
-const { linkCommandHandler } = require('./commands/link'); // Import the link command handler
-const { command: eventsCommand, handler: eventsHandler } = require('./commands/events'); // Import the events command
-const { command: guestsCommand, handler: guestsHandler } = require('./commands/guests'); // Import the guests command
-const { command: approveCommand, handler: approveHandler } = require('./commands/approve'); // Import the approve command
-const { command: rejectCommand, handler: rejectHandler } = require('./commands/reject'); // Import the reject command
-// Import the specific handlers needed from messageHandler.js
-const { messageHandler, shouldRespond } = require('./handlers/messageHandler'); 
-// Import the auth middleware
-const { requireLink } = require('./middleware/auth');
+import { config } from '../config/config.js';
+import { Telegraf } from 'telegraf';
+import { prisma } from '../core/db/prisma.js';
+import { linkCommandHandler } from './commands/link.js';
+import { command as eventsCommand, handler as eventsHandler } from './commands/events.js';
+import { command as guestsCommand, handler as guestsHandler } from './commands/guests.js';
+import { command as approveCommand, handler as approveHandler } from './commands/approve.js';
+import { command as rejectCommand, handler as rejectHandler } from './commands/reject.js';
+import { messageHandler, shouldRespond } from './handlers/messageHandler.js';
+import { requireLink } from './middleware/auth.js';
 
 // Basic validation
 if (!config.telegram.botToken) {

@@ -1,9 +1,7 @@
 require('dotenv').config();
 const { Telegraf } = require('telegraf');
-const { getEvents } = require('./airtable');
-const OpenAI = require('openai');
-
-const openai = new OpenAI(process.env.OPENAI_API_KEY);
+const { resolveQuery, formatDataWithGemini, postProcessResponse } = require('./core/nlp/geminiService');
+const { getEvents } = require('./services/lumaService');
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 async function processQuery(query, events) {
@@ -15,48 +13,11 @@ async function processQuery(query, events) {
            return "Yes of course he will 🍻";
        }
        
-       const completion = await openai.chat.completions.create({
-           model: "gpt-4",
-           messages: [
-               {
-                   role: "system",
-                   content: `You are a knowledgeable and slightly sarcastic assistant helping senior team members check Sonic World events. 
-                   Today's date is ${today}.
-                   
-                   Key principles:
-                   - Be extremely concise and clear like Hemingway or Orwell
-                   - Channel George Carlin's wit when appropriate
-                   - Use British English
-                   - Avoid listing events unless specifically asked
-                   - Give brief, focused answers - one or two sentences when possible
-                   - Skip unnecessary details
-                   - No adverbs or unnecessary adjectives
-                   - Treat the user as an expert
-                   - Be accurate above all else
-
-                   If the query is completely unrelated to events or business, respond with something like:
-                   "Look, Andy's paying good money for these OpenAI credits. Maybe ask about events instead?"
-                   or
-                   "I'd love to help, but every token costs money and Andy's watching the bill."
-                   
-                   If they ask about features we don't have yet, mention that we're working on:
-                   - Integration with negotiation tracking
-                   - Weekly report summaries
-                   - Event documentation links
-                   - Team travel coordination
-                   
-                   Only mention events if directly relevant to the query. Default to mentioning single events rather than lists. If someone asks about a region or timeframe, give a highlight or two rather than exhaustive lists.`
-               },
-               {
-                   role: "user",
-                   content: `Query: ${query}\n\nEvents data: ${JSON.stringify(events)}`
-               }
-           ]
-       });
-
-       return completion.choices[0].message.content;
+       // Use Gemini for processing the query
+       const response = await resolveQuery(query, { events });
+       return response;
    } catch (error) {
-       console.error('GPT Error:', error);
+       console.error('Gemini Error:', error);
        throw error;
    }
 }
