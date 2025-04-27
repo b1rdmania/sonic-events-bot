@@ -1,6 +1,7 @@
-// Original geminiService.js code
+// Original geminiService.js code - Attempting direct property access
 
-const { GoogleGenerativeAI } = require('@google/genai');
+// const { GoogleGenerativeAI } = require('@google/genai'); // Original import
+const genaiPackage = require('@google/genai'); // Import the whole package
 const config = require('../../config/config.js');
 
 console.log('=== Gemini Service Initialization ===');
@@ -16,16 +17,21 @@ let initializationError = null;
 
 try {
   console.log('Loading @google/genai module...');
-  // const { GoogleGenerativeAI } = require('@google/genai'); // Already required above
   console.log('@google/genai module loaded successfully');
   
+  if (!genaiPackage || !genaiPackage.GoogleGenerativeAI || typeof genaiPackage.GoogleGenerativeAI !== 'function') {
+      console.error('GoogleGenerativeAI constructor not found on the required package!');
+      throw new Error('GoogleGenerativeAI constructor not found on genaiPackage');
+  }
+  const GoogleGenerativeAI = genaiPackage.GoogleGenerativeAI; // Access directly
+
   if (!config.gemini.apiKey) {
     console.error('Missing GEMINI_API_KEY in config');
     throw new Error('Missing required environment variable: GEMINI_API_KEY');
   }
   
   console.log('Initializing GoogleGenAI instance with API key...');
-  genAI = new GoogleGenerativeAI(config.gemini.apiKey);
+  genAI = new GoogleGenerativeAI(config.gemini.apiKey); // Use the directly accessed constructor
   console.log('Gemini client instantiated successfully');
 } catch (error) {
   console.error('Failed to initialize Gemini:', error);
