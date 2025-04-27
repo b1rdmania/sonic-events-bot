@@ -1,6 +1,6 @@
-// Original geminiService.js code - Attempting direct property access
+// Original geminiService.js code - Using destructuring import with LATEST package
 
-const genaiPackage = require('@google/genai'); // Import the whole package
+const { GoogleGenerativeAI } = require('@google/genai'); // Use destructuring import
 const config = require('../../config/config.js');
 
 console.log('=== Gemini Service Initialization ===');
@@ -16,15 +16,22 @@ let initializationError = null;
 
 try {
   console.log('Loading @google/genai module...');
+  // const genaiPackage = require('@google/genai'); // No longer needed
   console.log('@google/genai module loaded successfully');
   
-  // Check only for the direct property, as confirmed by REPL
-  if (!genaiPackage || !genaiPackage.GoogleGenerativeAI || typeof genaiPackage.GoogleGenerativeAI !== 'function') {
-      console.error('GoogleGenerativeAI constructor not found on the required package!');
-      console.log('Imported package object structure:', Object.keys(genaiPackage)); // Log keys
-      throw new Error('GoogleGenerativeAI constructor not found on genaiPackage');
+  // Check if the destructuring worked
+  if (!GoogleGenerativeAI || typeof GoogleGenerativeAI !== 'function') {
+      console.error('!!! GoogleGenerativeAI constructor NOT FOUND via destructuring !!!');
+      // Attempt to log the structure if destructuring failed (might not work well)
+      try {
+          const genaiPackage = require('@google/genai');
+          console.log('Imported package keys for debugging:', Object.keys(genaiPackage));
+      } catch (logError) {
+          console.error('Could not re-require package for debugging.');
+      }
+      throw new Error('GoogleGenerativeAI constructor not found via destructuring.');
   }
-  const GoogleGenerativeAI = genaiPackage.GoogleGenerativeAI; // Access directly
+  // const GoogleGenerativeAI = genaiPackage.GoogleGenerativeAI; // No longer needed
 
   if (!config.gemini.apiKey) {
     console.error('Missing GEMINI_API_KEY in config');
@@ -32,7 +39,7 @@ try {
   }
   
   console.log('Initializing GoogleGenAI instance with API key...');
-  genAI = new GoogleGenerativeAI(config.gemini.apiKey); // Use the directly accessed constructor
+  genAI = new GoogleGenerativeAI(config.gemini.apiKey); // Use the destructured constructor
   console.log('Gemini client instantiated successfully');
 } catch (error) {
   console.error('Failed to initialize Gemini:', error);
