@@ -1,7 +1,7 @@
-// Simplified geminiService.js for debugging
+// Original geminiService.js code
 
 const { GoogleGenerativeAI } = require('@google/genai');
-const config = require('../../config/config.js'); // Adjusted path assuming config is two levels up
+const config = require('../../config/config.js');
 
 console.log('=== Gemini Service Initialization ===');
 console.log('Config loaded:', {
@@ -12,25 +12,25 @@ console.log('Config loaded:', {
 
 // Initialize Gemini client
 let genAI = null;
+let initializationError = null;
 
 try {
-  console.log('Attempting to initialize GoogleGenerativeAI...'); // Added log
+  console.log('Loading @google/genai module...');
+  // const { GoogleGenerativeAI } = require('@google/genai'); // Already required above
+  console.log('@google/genai module loaded successfully');
+  
+  if (!config.gemini.apiKey) {
+    console.error('Missing GEMINI_API_KEY in config');
+    throw new Error('Missing required environment variable: GEMINI_API_KEY');
+  }
+  
+  console.log('Initializing GoogleGenAI instance with API key...');
   genAI = new GoogleGenerativeAI(config.gemini.apiKey);
-  console.log('GoogleGenerativeAI initialized successfully.'); // Added log
+  console.log('Gemini client instantiated successfully');
 } catch (error) {
-  console.error('⚠️ Gemini initialization failed:', error);
-  console.warn('⚠️ Initializing mock Gemini client as fallback.'); // Added log
-  genAI = {
-    // Mock a fallback client
-    getGenerativeModel: () => ({ // Mock this method too as it's used later
-        generateContent: async (prompt) => { // Match expected structure
-            console.log('Mock Gemini responding to prompt:', prompt); // Added log
-            return {
-              response: { text: () => `⚠️ Gemini unavailable. Echo: ${prompt}` } // Match expected structure (text() method)
-            };
-        }
-    })
-  };
+  console.error('Failed to initialize Gemini:', error);
+  initializationError = error; // Store the error
+  // Keep genAI as null
 }
 
 /**
@@ -38,20 +38,25 @@ try {
  */
 async function generateResponse(prompt) {
   if (!genAI) {
-    console.error('Gemini service completely unavailable (genAI is null).'); // Added log
-    return "⚠️ Gemini service completely unavailable.";
+    const errorMessage = initializationError 
+      ? `Gemini service failed to initialize: ${initializationError.message}`
+      : "Gemini service is not initialized. Check logs for details.";
+    console.error(errorMessage);
+    return `⚠️ ${errorMessage}`;
   }
   
   try {
-    console.log(`Sending prompt to Gemini (or mock): "${prompt.substring(0, 50)}..."`); // Added log
+    console.log(`Generating response for: "${prompt.substring(0, 50)}..."`);
     const model = genAI.getGenerativeModel({ model: config.gemini.modelId || "gemini-2.0-flash" });
+    console.log('Model initialized, sending content...');
     const result = await model.generateContent(prompt);
-    const responseText = result.response?.text(); // Call text() method
-    console.log('Received response from Gemini (or mock):', responseText); // Added log
-    return responseText || "⚠️ No response from Gemini.";
+    console.log('Content generated, extracting response...');
+    const response = result.response?.text(); // Use optional chaining and call text()
+    console.log('Response extracted successfully');
+    return response || "⚠️ No response text received from Gemini.";
   } catch (error) {
-    console.error('⚠️ Gemini request failed:', error);
-    return "⚠️ Error using Gemini service.";
+    console.error('Error generating response:', error);
+    return `⚠️ Error generating response: ${error.message}`;
   }
 }
 
@@ -59,5 +64,5 @@ console.log('Gemini service module loaded. Initialized:', !!genAI);
 
 module.exports = {
   generateResponse,
-  isInitialized: () => !!genAI && typeof genAI.getGenerativeModel === 'function' // Adjusted check for mock/real client
+  isInitialized: () => !!genAI
 };
