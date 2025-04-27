@@ -1,6 +1,5 @@
-// Original geminiService.js code - Attempting direct property access
+// Original geminiService.js code - Attempting direct property access and default check
 
-// const { GoogleGenerativeAI } = require('@google/genai'); // Original import
 const genaiPackage = require('@google/genai'); // Import the whole package
 const config = require('../../config/config.js');
 
@@ -19,11 +18,17 @@ try {
   console.log('Loading @google/genai module...');
   console.log('@google/genai module loaded successfully');
   
-  if (!genaiPackage || !genaiPackage.GoogleGenerativeAI || typeof genaiPackage.GoogleGenerativeAI !== 'function') {
-      console.error('GoogleGenerativeAI constructor not found on the required package!');
-      throw new Error('GoogleGenerativeAI constructor not found on genaiPackage');
+  // Attempt to find the constructor, checking direct property and default export
+  const GoogleGenerativeAI = genaiPackage.GoogleGenerativeAI || genaiPackage.default?.GoogleGenerativeAI || genaiPackage.default;
+
+  if (!GoogleGenerativeAI || typeof GoogleGenerativeAI !== 'function') {
+      console.error('Could not find GoogleGenerativeAI constructor in the imported package (checked direct and default).');
+      console.log('Imported package object structure:', Object.keys(genaiPackage)); // Log keys to see structure
+      if (genaiPackage.default) {
+        console.log('Imported package.default object structure:', Object.keys(genaiPackage.default));
+      }
+      throw new Error('Failed to find GoogleGenerativeAI constructor');
   }
-  const GoogleGenerativeAI = genaiPackage.GoogleGenerativeAI; // Access directly
 
   if (!config.gemini.apiKey) {
     console.error('Missing GEMINI_API_KEY in config');
@@ -31,7 +36,7 @@ try {
   }
   
   console.log('Initializing GoogleGenAI instance with API key...');
-  genAI = new GoogleGenerativeAI(config.gemini.apiKey); // Use the directly accessed constructor
+  genAI = new GoogleGenerativeAI(config.gemini.apiKey); // Use the found constructor
   console.log('Gemini client instantiated successfully');
 } catch (error) {
   console.error('Failed to initialize Gemini:', error);
