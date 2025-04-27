@@ -14,7 +14,7 @@ let genAI = null;
 
 try {
   console.log('Loading @google/genai module...');
-  const { GoogleGenerativeAI } = require('@google/genai');
+  const genaiPackage = require('@google/genai');
   console.log('@google/genai module loaded successfully');
   
   if (!config.gemini.apiKey) {
@@ -23,7 +23,7 @@ try {
   }
   
   console.log('Initializing GoogleGenAI instance with API key...');
-  genAI = new GoogleGenerativeAI(config.gemini.apiKey);
+  genAI = new genaiPackage.GoogleGenerativeAI(config.gemini.apiKey);
   console.log('Gemini client instantiated successfully');
 } catch (error) {
   console.error('Failed to initialize Gemini:', error);
