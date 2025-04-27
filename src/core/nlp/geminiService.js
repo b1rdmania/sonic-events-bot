@@ -23,7 +23,14 @@ try {
   }
   
   console.log('Initializing GoogleGenAI instance with API key...');
-  genAI = new genaiPackage.GoogleGenerativeAI(config.gemini.apiKey);
+  // genAI = new genaiPackage.GoogleGenerativeAI(config.gemini.apiKey);
+  // Check if the constructor is directly on the package or on .default
+  const Constructor = genaiPackage.GoogleGenerativeAI || genaiPackage.default?.GoogleGenerativeAI || genaiPackage.default;
+  if (!Constructor || typeof Constructor !== 'function') {
+    console.error('Could not find GoogleGenerativeAI constructor in the imported package');
+    throw new Error('Failed to find GoogleGenerativeAI constructor');
+  }
+  genAI = new Constructor(config.gemini.apiKey); 
   console.log('Gemini client instantiated successfully');
 } catch (error) {
   console.error('Failed to initialize Gemini:', error);
