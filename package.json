@@ -2,10 +2,10 @@
   "name": "sonic-events-bot",
   "version": "1.0.0",
   "description": "Telegram bot for Sonic Events management",
-  "main": "src/bot.js",
+  "main": "src/bot/index.js",
   "scripts": {
-    "start": "node src/bot.js",
-    "dev": "nodemon src/bot.js"
+    "start": "node src/bot/index.js",
+    "dev": "nodemon src/bot/index.js"
   },
   "repository": {
     "type": "git",
@@ -18,13 +18,15 @@
   },
   "homepage": "https://github.com/b1rdmania/sonic-events-bot#readme",
   "dependencies": {
-    "airtable": "^0.12.2",
+    "@google/genai": "^0.2.0",
+    "axios": "^1.8.4",
     "dotenv": "^16.4.7",
-    "openai": "^4.77.3",
-    "punycode": "^2.3.1",
     "telegraf": "^4.16.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"
+  },
+  "engines": {
+    "node": "^20.x"
   }
 }

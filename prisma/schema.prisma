@@ -1,0 +1,86 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma" // Explicit output path
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Represents a tenant organization using the bot
+model Org {
+  id                   String   @id @default(cuid()) // Using CUID for IDs
+  name                 String?  // Optional name for the organization
+  lumaApiKeyEncrypted  String   // Encrypted Luma API Key is required
+  vipScoringConfig     Json?    // For future VIP scoring customization
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  users     User[]
+  groups    Group[]
+  auditLogs AuditLog[]
+}
+
+// Represents a Telegram user interacting with the bot via DM
+model User {
+  id        BigInt   @id // Telegram User ID (BigInt is safer for potentially large IDs)
+  firstName String?  // User's first name from Telegram
+  username  String?  // User's username from Telegram (optional)
+  role      String   @default("member") // Role for future use (e.g., 'admin', 'member')
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relation to Org
+  org   Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId String // Foreign key
+
+  // Relation to AuditLog
+  auditLogs AuditLog[]
+}
+
+// Represents a Telegram group where the bot is active
+model Group {
+  id                 BigInt  @id // Telegram Group/Chat ID (BigInt is safer)
+  name               String? // Group name from Telegram
+  activeEventContext String? // For storing the currently selected event context (e.g., event_api_id)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relation to Org
+  org   Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId String // Foreign key
+
+  // Relation to AuditLog
+  auditLogs AuditLog[]
+}
+
+// Logs significant actions performed via the bot
+model AuditLog {
+  id         String   @id @default(cuid())
+  timestamp  DateTime @default(now())
+  actionType String   // e.g., 'link_api_key', 'get_guests', 'approve_guest'
+  details    Json?    // Contextual details (e.g., event ID, guest email)
+
+  // Relation to Org
+  org   Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId String // Foreign key
+
+  // Optional relation to User (if action initiated by user in DM or group)
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId BigInt? // Foreign key
+
+  // Optional relation to Group (if action initiated within a group)
+  group   Group?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  groupId BigInt? // Foreign key
+}
