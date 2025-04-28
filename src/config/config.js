@@ -19,7 +19,7 @@ const config = {
     },
     luma: {
         apiKey: cleanToken(process.env.LUMA_API_KEY),
-        apiUrl: 'https://api.lumahq.com/v1'
+        apiUrl: 'https://api.lu.ma/public/v1'
     },
     bot: {
         name: 'Sonic Events Bot',

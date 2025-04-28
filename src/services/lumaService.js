@@ -1,30 +1,26 @@
 const axios = require('axios');
 const config = require('../config/config');
 
-// Create axios instance with SSL verification disabled for development
+const LUMA_API_BASE_URL = 'https://api.lu.ma/public/v1';
+
+// Create axios instance for Luma API calls
 const lumaAxios = axios.create({
-    httpsAgent: new (require('https').Agent)({
-        rejectUnauthorized: false
-    })
+    baseURL: LUMA_API_BASE_URL,
+    headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'x-luma-api-key': config.luma.apiKey
+    },
+    timeout: 15000 // 15 second timeout
 });
 
 async function getEvents() {
     try {
         console.log('Fetching events from Luma API...');
-        console.log('API URL:', config.luma.apiUrl);
-        console.log('API Key length:', config.luma.apiKey ? config.luma.apiKey.length : 0);
-        
-        const response = await lumaAxios.get(`${config.luma.apiUrl}/events`, {
-            headers: {
-                'Authorization': `Bearer ${config.luma.apiKey}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
+        const response = await lumaAxios.get('/calendar/list-events');
         console.log('Luma API response status:', response.status);
-        console.log('Luma API response data:', JSON.stringify(response.data, null, 2));
-
-        return response.data.events.map(event => ({
+        
+        return response.data.entries.map(event => ({
             name: event.name,
             date: event.start_at,
             location: event.location,
@@ -39,12 +35,7 @@ async function getEvents() {
             response: error.response ? {
                 status: error.response.status,
                 data: error.response.data
-            } : 'No response',
-            config: error.config ? {
-                url: error.config.url,
-                method: error.config.method,
-                headers: error.config.headers
-            } : 'No config'
+            } : 'No response'
         });
         throw new Error(`Failed to fetch events from Luma API: ${error.message}`);
     }
@@ -66,31 +57,34 @@ async function getEventByName(eventName) {
 
 async function getGuests(eventId, status = null) {
     try {
-        const url = `${config.luma.apiUrl}/events/${eventId}/guests`;
-        const response = await lumaAxios.get(url, {
-            headers: {
-                'Authorization': `Bearer ${config.luma.apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            params: status ? { status } : undefined
-        });
-
-        return response.data.guests.map(guest => ({
+        const params = { event_api_id: eventId };
+        if (status) {
+            params.approval_status = status;
+        }
+        
+        const response = await lumaAxios.get('/event/get-guests', { params });
+        return response.data.entries.map(guest => ({
             email: guest.email,
             name: guest.name,
             status: guest.status,
             registered_at: guest.registered_at
         }));
     } catch (error) {
-        console.error('Error fetching guests from Luma:', error);
-        throw new Error('Failed to fetch guests from Luma API');
+        console.error('Error fetching guests from Luma:', {
+            message: error.message,
+            response: error.response ? {
+                status: error.response.status,
+                data: error.response.data
+            } : 'No response'
+        });
+        throw new Error(`Failed to fetch guests from Luma API: ${error.message}`);
     }
 }
 
 async function getPendingGuests(eventName) {
     try {
         const event = await getEventByName(eventName);
-        const guests = await getGuests(event.api_id, 'pending');
+        const guests = await getGuests(event.api_id, 'pending_approval');
         return {
             event,
             guests,
