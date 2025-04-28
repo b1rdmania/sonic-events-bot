@@ -10,12 +10,19 @@ const lumaAxios = axios.create({
 
 async function getEvents() {
     try {
+        console.log('Fetching events from Luma API...');
+        console.log('API URL:', config.luma.apiUrl);
+        console.log('API Key length:', config.luma.apiKey ? config.luma.apiKey.length : 0);
+        
         const response = await lumaAxios.get(`${config.luma.apiUrl}/events`, {
             headers: {
                 'Authorization': `Bearer ${config.luma.apiKey}`,
                 'Content-Type': 'application/json'
             }
         });
+
+        console.log('Luma API response status:', response.status);
+        console.log('Luma API response data:', JSON.stringify(response.data, null, 2));
 
         return response.data.events.map(event => ({
             name: event.name,
@@ -27,8 +34,19 @@ async function getEvents() {
             api_id: event.id
         }));
     } catch (error) {
-        console.error('Error fetching events from Luma:', error);
-        throw new Error('Failed to fetch events from Luma API');
+        console.error('Error fetching events from Luma:', {
+            message: error.message,
+            response: error.response ? {
+                status: error.response.status,
+                data: error.response.data
+            } : 'No response',
+            config: error.config ? {
+                url: error.config.url,
+                method: error.config.method,
+                headers: error.config.headers
+            } : 'No config'
+        });
+        throw new Error(`Failed to fetch events from Luma API: ${error.message}`);
     }
 }
 
