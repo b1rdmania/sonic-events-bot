@@ -19,7 +19,13 @@ async function getEvents() {
         console.log('Fetching events from Luma API...');
         const response = await lumaAxios.get('/calendar/list-events');
         console.log('Luma API response status:', response.status);
+        console.log('Number of events found:', response.data.entries?.length || 0);
         
+        if (!response.data.entries) {
+            console.error('No events array in response:', response.data);
+            throw new Error('Invalid response format from Luma API');
+        }
+
         return response.data.entries.map(event => ({
             name: event.name,
             date: event.start_at,
@@ -43,11 +49,30 @@ async function getEvents() {
 
 async function getEventByName(eventName) {
     try {
+        if (!eventName) {
+            throw new Error('Event name is required');
+        }
+
+        console.log('Searching for event:', eventName);
         const events = await getEvents();
-        const event = events.find(e => e.name.toLowerCase().includes(eventName.toLowerCase()));
+        console.log('Found events:', events.map(e => e.name));
+
+        const searchName = eventName.toLowerCase();
+        const event = events.find(e => {
+            if (!e.name) {
+                console.warn('Event missing name:', e);
+                return false;
+            }
+            return e.name.toLowerCase().includes(searchName);
+        });
+
         if (!event) {
+            console.log('No matching event found for:', eventName);
+            console.log('Available events:', events.map(e => e.name).join(', '));
             throw new Error(`Event "${eventName}" not found`);
         }
+
+        console.log('Found matching event:', event.name);
         return event;
     } catch (error) {
         console.error('Error finding event:', error);
@@ -57,12 +82,24 @@ async function getEventByName(eventName) {
 
 async function getGuests(eventId, status = null) {
     try {
+        if (!eventId) {
+            throw new Error('Event ID is required');
+        }
+
         const params = { event_api_id: eventId };
         if (status) {
             params.approval_status = status;
         }
         
+        console.log('Fetching guests for event:', eventId, 'with status:', status);
         const response = await lumaAxios.get('/event/get-guests', { params });
+        console.log('Found guests:', response.data.entries?.length || 0);
+
+        if (!response.data.entries) {
+            console.error('No guests array in response:', response.data);
+            throw new Error('Invalid response format from Luma API');
+        }
+
         return response.data.entries.map(guest => ({
             email: guest.email,
             name: guest.name,
@@ -83,6 +120,7 @@ async function getGuests(eventId, status = null) {
 
 async function getPendingGuests(eventName) {
     try {
+        console.log('Getting pending guests for event:', eventName);
         const event = await getEventByName(eventName);
         const guests = await getGuests(event.api_id, 'pending_approval');
         return {
@@ -98,6 +136,7 @@ async function getPendingGuests(eventName) {
 
 async function getApprovedGuests(eventName) {
     try {
+        console.log('Getting approved guests for event:', eventName);
         const event = await getEventByName(eventName);
         const guests = await getGuests(event.api_id, 'approved');
         return {
