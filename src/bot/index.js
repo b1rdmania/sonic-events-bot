@@ -2,7 +2,7 @@ const { Telegraf } = require('telegraf');
 const config = require('../config/config.js');
 const geminiService = require('../core/nlp/geminiService');
 const axios = require('axios');
-const lumaService = require('../core/luma/lumaService');
+const lumaService = require('../services/lumaService.js');
 
 console.log('=== Bot Initialization ===');
 console.log('Starting with configuration:');
