@@ -67,7 +67,7 @@ async function generateResponse(prompt) {
   
   try {
     console.log(`Generating response for: "${prompt.substring(0, 50)}..."`);
-    const model = genAI.getGenerativeModel({ model: config.gemini.modelId || "gemini-2.0-flash" });
+    const model = genAI.getModel(config.gemini.modelId || "gemini-2.0-flash");
     console.log('Model initialized, sending content...');
     const result = await model.generateContent(prompt);
     console.log('Content generated, extracting response...');
