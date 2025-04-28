@@ -25,6 +25,77 @@ async function getEvents() {
     }
 }
 
+async function getEventByName(eventName) {
+    try {
+        const events = await getEvents();
+        const event = events.find(e => e.name.toLowerCase().includes(eventName.toLowerCase()));
+        if (!event) {
+            throw new Error(`Event "${eventName}" not found`);
+        }
+        return event;
+    } catch (error) {
+        console.error('Error finding event:', error);
+        throw error;
+    }
+}
+
+async function getGuests(eventId, status = null) {
+    try {
+        const url = `${config.luma.apiUrl}/events/${eventId}/guests`;
+        const response = await axios.get(url, {
+            headers: {
+                'Authorization': `Bearer ${config.luma.apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            params: status ? { status } : undefined
+        });
+
+        return response.data.guests.map(guest => ({
+            email: guest.email,
+            name: guest.name,
+            status: guest.status,
+            registered_at: guest.registered_at
+        }));
+    } catch (error) {
+        console.error('Error fetching guests from Luma:', error);
+        throw new Error('Failed to fetch guests from Luma API');
+    }
+}
+
+async function getPendingGuests(eventName) {
+    try {
+        const event = await getEventByName(eventName);
+        const guests = await getGuests(event.api_id, 'pending');
+        return {
+            event,
+            guests,
+            count: guests.length
+        };
+    } catch (error) {
+        console.error('Error getting pending guests:', error);
+        throw error;
+    }
+}
+
+async function getApprovedGuests(eventName) {
+    try {
+        const event = await getEventByName(eventName);
+        const guests = await getGuests(event.api_id, 'approved');
+        return {
+            event,
+            guests,
+            count: guests.length
+        };
+    } catch (error) {
+        console.error('Error getting approved guests:', error);
+        throw error;
+    }
+}
+
 module.exports = {
-    getEvents
+    getEvents,
+    getEventByName,
+    getGuests,
+    getPendingGuests,
+    getApprovedGuests
 }; 

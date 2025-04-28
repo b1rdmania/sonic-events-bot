@@ -2,6 +2,7 @@ const { Telegraf } = require('telegraf');
 const config = require('../config/config.js');
 const geminiService = require('../core/nlp/geminiService');
 const axios = require('axios');
+const lumaService = require('../core/luma/lumaService');
 
 console.log('=== Bot Initialization ===');
 console.log('Starting with configuration:');
@@ -77,7 +78,36 @@ bot.on('text', async (ctx) => {
     if (!geminiService.isInitialized()) {
       return ctx.reply('⚠️ Gemini service is not initialized. Check API key configuration.');
     }
+
+    // Check if the message is about pending guests
+    if (ctx.message.text.toLowerCase().includes('pending') && ctx.message.text.toLowerCase().includes('list')) {
+      const eventName = ctx.message.text.match(/for\s+(.*?)(?:\s+event)?$/i)?.[1];
+      if (eventName) {
+        try {
+          const { event, count } = await lumaService.getPendingGuests(eventName);
+          return ctx.reply(`There are ${count} pending guests for ${event.name}.`);
+        } catch (error) {
+          console.error('Error getting pending guests:', error);
+          return ctx.reply(`Sorry, I couldn't get the pending guest list: ${error.message}`);
+        }
+      }
+    }
+
+    // Check if the message is about approved guests
+    if (ctx.message.text.toLowerCase().includes('approved') && ctx.message.text.toLowerCase().includes('list')) {
+      const eventName = ctx.message.text.match(/for\s+(.*?)(?:\s+event)?$/i)?.[1];
+      if (eventName) {
+        try {
+          const { event, count } = await lumaService.getApprovedGuests(eventName);
+          return ctx.reply(`There are ${count} approved guests for ${event.name}.`);
+        } catch (error) {
+          console.error('Error getting approved guests:', error);
+          return ctx.reply(`Sorry, I couldn't get the approved guest list: ${error.message}`);
+        }
+      }
+    }
     
+    // For other queries, use Gemini
     const prompt = `You are a helpful assistant for a Telegram bot. The user sent this message: "${ctx.message.text}". Respond in a friendly and concise way.`;
     const response = await geminiService.generateResponse(prompt);
     return ctx.reply(response);
