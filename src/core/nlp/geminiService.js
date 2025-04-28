@@ -8,15 +8,6 @@ const genaiPackage = require('@google/genai');
 console.log('=== Package Debug ===');
 console.log('Package type:', typeof genaiPackage);
 console.log('Package keys:', Object.keys(genaiPackage));
-console.log('Package prototype:', Object.getPrototypeOf(genaiPackage));
-console.log('Package descriptor:', Object.getOwnPropertyDescriptor(genaiPackage, 'GoogleGenerativeAI'));
-
-// Try different ways to access the constructor
-console.log('=== Constructor Access Attempts ===');
-console.log('Direct access:', genaiPackage.GoogleGenerativeAI);
-console.log('Destructured access:', genaiPackage['GoogleGenerativeAI']);
-console.log('Has own property:', genaiPackage.hasOwnProperty('GoogleGenerativeAI'));
-console.log('Property descriptor:', Object.getOwnPropertyDescriptor(genaiPackage, 'GoogleGenerativeAI'));
 
 const config = require('../../config/config.js');
 
@@ -43,7 +34,6 @@ try {
   
   if (!GoogleGenAI || typeof GoogleGenAI !== 'function') {
       console.error('!!! GoogleGenAI constructor NOT FOUND !!!');
-      console.log('Full package structure:', JSON.stringify(genaiPackage, null, 2));
       throw new Error('GoogleGenAI constructor not found in package.');
   }
 
