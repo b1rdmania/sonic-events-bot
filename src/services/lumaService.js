@@ -1,9 +1,16 @@
 const axios = require('axios');
 const config = require('../config/config');
 
+// Create axios instance with SSL verification disabled for development
+const lumaAxios = axios.create({
+    httpsAgent: new (require('https').Agent)({
+        rejectUnauthorized: false
+    })
+});
+
 async function getEvents() {
     try {
-        const response = await axios.get(`${config.luma.apiUrl}/events`, {
+        const response = await lumaAxios.get(`${config.luma.apiUrl}/events`, {
             headers: {
                 'Authorization': `Bearer ${config.luma.apiKey}`,
                 'Content-Type': 'application/json'
@@ -42,7 +49,7 @@ async function getEventByName(eventName) {
 async function getGuests(eventId, status = null) {
     try {
         const url = `${config.luma.apiUrl}/events/${eventId}/guests`;
-        const response = await axios.get(url, {
+        const response = await lumaAxios.get(url, {
             headers: {
                 'Authorization': `Bearer ${config.luma.apiKey}`,
                 'Content-Type': 'application/json'
