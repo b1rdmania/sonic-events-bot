@@ -1,12 +1,26 @@
 const { Telegraf } = require('telegraf');
 const config = require('../config/config.js');
 const geminiService = require('../core/nlp/geminiService');
+const axios = require('axios');
 
 console.log('=== Bot Initialization ===');
 console.log('Starting with configuration:');
 console.log('- BOT_TOKEN exists:', !!config.telegram.token);
 console.log('- GEMINI_API_KEY exists:', !!config.gemini.apiKey);
 console.log('- Gemini service initialized:', geminiService.isInitialized());
+
+// Test token directly with Telegram API
+async function verifyBotToken(token) {
+  try {
+    console.log('Verifying bot token...');
+    const response = await axios.get(`https://api.telegram.org/bot${token}/getMe`);
+    console.log('Token verification response:', response.data);
+    return response.data.ok;
+  } catch (error) {
+    console.error('Token verification error:', error.response?.data || error.message);
+    return false;
+  }
+}
 
 // Basic validation
 if (!config.telegram.token) {
@@ -81,7 +95,14 @@ bot.catch((err, ctx) => {
 
 // Start the bot
 console.log('Starting bot...');
-bot.launch()
+verifyBotToken(config.telegram.token)
+  .then(isValid => {
+    if (!isValid) {
+      console.error('Bot token verification failed. Please check your token.');
+      process.exit(1);
+    }
+    return bot.launch();
+  })
   .then(() => {
     console.log('Bot is running!');
   })

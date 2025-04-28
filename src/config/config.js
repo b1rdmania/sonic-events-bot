@@ -1,12 +1,19 @@
 require('dotenv').config();
 
+console.log('=== Environment Variables Debug ===');
+console.log('BOT_TOKEN length:', process.env.BOT_TOKEN ? process.env.BOT_TOKEN.length : 0);
+console.log('GEMINI_API_KEY length:', process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.length : 0);
+
+// Clean up tokens by removing whitespace
+const cleanToken = (token) => token ? token.trim() : null;
+
 const config = {
     telegram: {
-        token: process.env.BOT_TOKEN,
+        token: cleanToken(process.env.BOT_TOKEN),
         agentChannel: process.env.AGENT_CHANNEL
     },
     gemini: {
-        apiKey: process.env.GEMINI_API_KEY,
+        apiKey: cleanToken(process.env.GEMINI_API_KEY),
         modelId: 'gemini-2.0-flash'
     },
     luma: {
