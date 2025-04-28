@@ -1,13 +1,13 @@
-// Original geminiService.js code - Using destructuring import with LATEST package
+// Original geminiService.js code - Using latest @google/genai package
 
 console.log('=== Starting Gemini Service Debug ===');
 console.log('Node version:', process.version);
 console.log('Current working directory:', process.cwd());
 
-const genaiPackage = require('@google/genai');
+const { GoogleGenAI } = require('@google/genai');
 console.log('=== Package Debug ===');
-console.log('Package type:', typeof genaiPackage);
-console.log('Package keys:', Object.keys(genaiPackage));
+console.log('Package type:', typeof GoogleGenAI);
+console.log('Package keys:', Object.keys(GoogleGenAI));
 
 const config = require('../../config/config.js');
 
@@ -27,23 +27,13 @@ try {
   console.log('Loading @google/genai module...');
   console.log('@google/genai module loaded successfully');
   
-  // Use the correct constructor name
-  const GoogleGenAI = genaiPackage.GoogleGenAI;
-  console.log('Constructor found:', !!GoogleGenAI);
-  console.log('Constructor type:', typeof GoogleGenAI);
-  
-  if (!GoogleGenAI || typeof GoogleGenAI !== 'function') {
-      console.error('!!! GoogleGenAI constructor NOT FOUND !!!');
-      throw new Error('GoogleGenAI constructor not found in package.');
-  }
-
   if (!config.gemini.apiKey) {
     console.error('Missing GEMINI_API_KEY in config');
     throw new Error('Missing required environment variable: GEMINI_API_KEY');
   }
   
   console.log('Initializing GoogleGenAI instance with API key...');
-  genAI = new GoogleGenAI(config.gemini.apiKey);
+  genAI = new GoogleGenAI({ apiKey: config.gemini.apiKey });
   console.log('Gemini client instantiated successfully');
 } catch (error) {
   console.error('=== Initialization Error ===');
@@ -67,13 +57,14 @@ async function generateResponse(prompt) {
   
   try {
     console.log(`Generating response for: "${prompt.substring(0, 50)}..."`);
-    const model = genAI.getModel(config.gemini.modelId || "gemini-2.0-flash");
-    console.log('Model initialized, sending content...');
-    const result = await model.generateContent(prompt);
+    const result = await genAI.models.generateContent({
+      model: config.gemini.modelId || "gemini-1.5-flash",
+      contents: [{ role: "user", parts: [{ text: prompt }] }]
+    });
     console.log('Content generated, extracting response...');
-    const response = result.response?.text(); // Use optional chaining and call text()
+    const responseText = result.text;
     console.log('Response extracted successfully');
-    return response || "⚠️ No response text received from Gemini.";
+    return responseText || "⚠️ No response text received from Gemini.";
   } catch (error) {
     console.error('Error generating response:', error);
     return `⚠️ Error generating response: ${error.message}`;
